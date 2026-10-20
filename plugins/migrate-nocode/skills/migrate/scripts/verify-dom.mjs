@@ -151,7 +151,12 @@ function diffNode(a, b, where, out, limit) {
   if (a.ignored || b.ignored) return;
   if (a.tag !== b.tag) { out.push({ path: where, kind: "tag", a: a.tag, b: b.tag }); return; }
   for (const k of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
-    if (a.attrs[k] !== b.attrs[k]) out.push({ path: where, kind: "attr", name: k, a: clip(a.attrs[k], 120), b: clip(b.attrs[k], 120) });
+    if (a.attrs[k] === b.attrs[k]) continue;
+    if (k === "class" && a.attrs[k] !== undefined && b.attrs[k] !== undefined) {
+      // Token delta: "-only-in-snapshot +only-in-local".
+      const A = new Set(a.attrs[k].split(" ")), B = new Set(b.attrs[k].split(" "));
+      out.push({ path: where, kind: "class", a: [...A].filter((x) => !B.has(x)).map((x) => "-" + x).join(" ") || undefined, b: [...B].filter((x) => !A.has(x)).map((x) => "+" + x).join(" ") || undefined });
+    } else out.push({ path: where, kind: "attr", name: k, a: clip(a.attrs[k], 120), b: clip(b.attrs[k], 120) });
   }
   for (const [i, j] of align(a.kids, b.kids)) {
     if (out.length >= limit) return;
@@ -249,7 +254,17 @@ export async function run() {
   const max = Number(arg("max", 6));
   const bad = ok.filter((r) => r.own.length);
   const errs = results.filter((r) => r.error);
-  const fmt = (d) => `${showText(d.path.replace(c.rootSelector + " > ", ""), 70)}: ${d.kind}${d.name ? " " + d.name : ""} ${d.a !== undefined ? `"${showText(d.a, 40)}"` : ""}${d.a !== undefined && d.b !== undefined ? " ≠ " : ""}${d.b !== undefined ? `"${showText(d.b, 40)}"` : ""}${d.note ? ` (${d.note})` : ""}`;
+  // Long values that share a prefix: show where they start to differ.
+  const tails = (a, b) => {
+    if (a === undefined || b === undefined) return [a, b];
+    let p = 0;
+    while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    return p > 30 ? ["…" + a.slice(p - 12), "…" + b.slice(p - 12)] : [a, b];
+  };
+  const fmt = (d) => {
+    const [a, b] = tails(d.a, d.b);
+    return `${showText(d.path.replace(c.rootSelector + " > ", ""), 70)}: ${d.kind}${d.name ? " " + d.name : ""} ${a !== undefined ? `"${showText(a, 40)}"` : ""}${a !== undefined && b !== undefined ? " ≠ " : ""}${b !== undefined ? `"${showText(b, 40)}"` : ""}${d.note ? ` (${d.note})` : ""}`;
+  };
   console.log(`verify-dom: ${results.length} routes vs ${path.basename(snapDir)} (${against ? "snapshot " + path.basename(against) : arg("render") ? "rendered" : "server HTML"}), ${ok.length - bad.length} identical${shared.length ? ` apart from ${shared.length} shared diffs` : ""}, ${bad.length} with differences${errs.length ? `, ${errs.length} errors` : ""}`);
   for (const r of errs.slice(0, 10)) console.log(`  ${r.route}: ${r.error}`);
   for (const r of bad.slice(0, 20)) {

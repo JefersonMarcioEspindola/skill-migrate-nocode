@@ -17,6 +17,10 @@ export const OPTION_WHITELIST = new Set([
 /** Option names never read even if a future whitelist entry matched them. */
 export const SECRET_OPTION = /pass|secret|token|api_?key|auth_?key|salt|nonce|license|private|credential|smtp/i;
 
+/** Post types whose post_content is configuration the tools need (never dropped by keepContent). */
+export const ALWAYS_KEEP_CONTENT = /^(acf-field|acf-field-group|acf-post-type|acf-taxonomy|wp_block)$/;
+/** Field/meta names treated as secrets even when their type is unknown: never exported. */
+export const SECRET_FIELD_NAME = /pass(word|wd)?$|^pass_|secret|token|api_?key|private_?key|credential/i;
 export const BUILTIN_TYPES = new Set(["post", "page", "attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request", "wp_block", "wp_template", "wp_template_part", "wp_global_styles", "wp_navigation", "wp_font_family", "wp_font_face"]);
 export const INTERNAL_TYPES = /^(acf-|elementor_|e-floating|jet-|jet_|wpcf7|wpforms|shop_|product_variation|wc_|scheduled-action|oembed_cache|customize_|nf_sub|flamingo|mc4wp|ct_template|fl-builder|et_pb_layout|astra-|kadence_|wp_|tablepress|frm_|gf_|cookielawinfo|wpcode|rank_math|yoast)/;
 export const OUT_OF_SCOPE_TYPES = new Set(["product", "product_variation", "shop_order", "shop_order_refund", "shop_coupon", "shop_subscription"]);
@@ -26,11 +30,11 @@ const TABLE_SUFFIX = /(options|posts|postmeta|terms|term_taxonomy|term_relations
 // ------------------------------------------------------------------ dump loading
 
 /**
- * loadDump(file, { prefix, metaFor: (postId, postType) => bool | "attachment", metaKeys?: Set, collectMetaStats })
+ * loadDump(file, { prefix, metaFor: (postId, postType) => bool | "attachment", collectMetaStats, keepContent(type), onLoaded(model), onPostRow(table, row) })
  * Pass 1: options/posts/terms/users/plugin tables. Pass 2 (only when metaFor is given): postmeta of wanted posts.
  * Inventory uses collectMetaStats (single pass, key counts only).
  */
-export async function loadDump(file, { prefix: forcedPrefix, metaFor, collectMetaStats = false, keepContent = () => true, onProgress } = {}) {
+export async function loadDump(file, { prefix: forcedPrefix, metaFor, collectMetaStats = false, keepContent = () => true, onProgress, onLoaded, onPostRow } = {}) {
   const m = {
     file, prefix: forcedPrefix || null, tables: null, options: {}, optionNames: [], posts: new Map(), meta: new Map(),
     terms: new Map(), tax: new Map(), rels: new Map(), users: new Map(), icl: [], jetTypes: [], jetTax: [], jetRels: new Map(), redirections: [],
@@ -43,7 +47,11 @@ export async function loadDump(file, { prefix: forcedPrefix, metaFor, collectMet
     onProgress,
     wantRows: (t) => want(t) && (!t.endsWith("postmeta") || collectMetaStats),
     onRow: (t, row) => {
-      if (!t.endsWith("postmeta")) return pending.push([t, slim(t, row)]);
+      if (!t.endsWith("postmeta")) {
+        // post_content of ACF definitions (field settings, location rules, ACF post types) and reusable blocks is always kept
+        if (t.endsWith("posts")) { onPostRow?.(t, row); if (!ALWAYS_KEEP_CONTENT.test(row.post_type) && !keepContent(row.post_type)) delete row.post_content; }
+        return pending.push([t, slim(t, row)]);
+      }
       let st = statsByTable.get(t);
       if (!st) statsByTable.set(t, (st = { metaStats: new Map(), metaPostIds: new Map(), acfRefs: new Map() }));
       metaStat(st, row);
@@ -59,6 +67,7 @@ export async function loadDump(file, { prefix: forcedPrefix, metaFor, collectMet
   const st = statsByTable.get(`${P}postmeta`);
   if (st) Object.assign(m, st);
 
+  onLoaded?.(m); // pass 1 done: posts/options/terms are available to metaFor
   if (metaFor) {
     await scanDump(file, {
       onProgress,
@@ -110,7 +119,7 @@ function ingest(m, t, row, keepContent) {
       if (row.option_value !== undefined) m.options[row.option_name] = maybeUnserialize(row.option_value);
       break;
     case "posts":
-      if (!keepContent(row.post_type)) delete row.post_content;
+      if (!ALWAYS_KEEP_CONTENT.test(row.post_type) && !keepContent(row.post_type)) delete row.post_content;
       m.posts.set(row.ID, row);
       break;
     case "terms": m.terms.set(row.term_id, { term_id: row.term_id, name: row.name, slug: row.slug }); break;
@@ -328,7 +337,7 @@ export function oldPostPath(m, p, ctx) {
   const langPrefix = lang && lang !== ctx.defaultLang ? `/${lang}` : "";
   let out;
   if (p.post_type === "page") {
-    if (String(m.options.page_on_front) === p.ID && m.options.show_on_front === "page") return langPrefix || "/";
+    if (String(m.options.page_on_front) === p.ID && m.options.show_on_front === "page") return (ctx.homePath || "") + langPrefix || "/";
     out = structure ? hierPath(m, p) : `/?page_id=${p.ID}`;
   } else if (p.post_type === "post") {
     if (!structure) out = `/?p=${p.ID}`;
@@ -347,8 +356,13 @@ export function oldPostPath(m, p, ctx) {
       out = `${t && t.withFront ? ctx.front : ""}/${slug}${t?.hierarchical ? hierPath(m, p) : `/${p.post_name}`}`;
     }
   }
-  out = (langPrefix + out).replace(/\/{2,}/g, "/");
+  out = ((ctx.homePath || "") + langPrefix + out).replace(/\/{2,}/g, "/");
   return out.length > 1 ? out.replace(/\/$/, "") : out;
+}
+
+/** "/news" when WordPress lives in a subdirectory (home = https://x.org/news), else "". */
+export function homePath(m, override) {
+  try { return new URL(String(override || m.options.home || m.options.siteurl || "http://x/")).pathname.replace(/\/+$/, ""); } catch { return ""; }
 }
 
 export function hierPath(m, p) {
@@ -382,13 +396,13 @@ export function termPath(m, term) {
 
 export function oldTermPath(m, term, ctx) {
   const structure = m.options.permalink_structure || "";
-  if (!structure) return term.taxonomy === "category" ? `/?cat=${term.term_id}` : term.taxonomy === "post_tag" ? `/?tag=${term.slug}` : `/?${term.taxonomy}=${term.slug}`;
+  if (!structure) return (ctx.homePath || "") + (term.taxonomy === "category" ? `/?cat=${term.term_id}` : term.taxonomy === "post_tag" ? `/?tag=${term.slug}` : `/?${term.taxonomy}=${term.slug}`);
   let base;
   if (term.taxonomy === "category") base = `${ctx.front}/${m.options.category_base || "category"}`;
   else if (term.taxonomy === "post_tag") base = `${ctx.front}/${m.options.tag_base || "tag"}`;
   else { const t = ctx.taxonomies.get(term.taxonomy); if (t?.rewriteSlug === null) return null; base = `/${t?.rewriteSlug || term.taxonomy}`; }
   const hier = term.taxonomy === "category" || ctx.taxonomies.get(term.taxonomy)?.hierarchical;
-  return `${base}/${hier ? termPath(m, term) : term.slug}`.replace(/\/{2,}/g, "/");
+  return `${ctx.homePath || ""}${base}/${hier ? termPath(m, term) : term.slug}`.replace(/\/{2,}/g, "/");
 }
 
 // ------------------------------------------------------------------ text helpers

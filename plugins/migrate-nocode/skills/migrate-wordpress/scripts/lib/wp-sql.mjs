@@ -20,11 +20,19 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
   const tables = new Map();
   let buf = "", pos = 0, unit = 0, eof = false, readBytes = 0, delimiter = ";";
   let mode = "top", table = null, columns = null, emit = false, tinfo = null;
+  // Cached position of the next backslash in buf (-2 unknown, -1 none left). Valid until buf changes in more().
+  let nextBs = -2;
+  const backslashFrom = (i) => {
+    if (nextBs === -1) return -1;
+    if (nextBs === -2 || nextBs < i) nextBs = buf.indexOf("\\", i);
+    return nextBs;
+  };
 
   async function more() {
     const r = await it.next();
     buf = buf.slice(unit);
     pos = unit = 0;
+    nextBs = -2;
     if (r.done) { eof = true; buf += decoder.end(); return false; }
     readBytes += r.value.length;
     buf += decoder.write(r.value);
@@ -54,11 +62,13 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
   }
 
   // Reads a quoted string starting at pos (buf[pos] is the quote). build=false only skips.
+  // Positions of the next backslash/quote are cached so long strings with many escapes stay linear.
   function readString(build) {
     const q = buf[pos];
-    let i = pos + 1, out = build ? [] : null, segStart = i;
+    let i = pos + 1, segStart = i;
+    const out = build ? [] : null;
+    let bs = backslashFrom(i), qq = buf.indexOf(q, i);
     for (;;) {
-      const bs = buf.indexOf("\\", i), qq = buf.indexOf(q, i);
       if (qq < 0) { need(); throw new Error("unterminated string at end of dump"); }
       if (bs >= 0 && bs < qq) {
         if (bs + 1 >= buf.length) need();
@@ -68,10 +78,18 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
           out.push(e === "0" ? "\0" : e === "n" ? "\n" : e === "r" ? "\r" : e === "t" ? "\t" : e === "b" ? "\b" : e === "Z" ? "\x1a" : e === "%" ? "\\%" : e === "_" ? "\\_" : e);
         }
         i = segStart = bs + 2;
+        bs = backslashFrom(i);
+        if (qq < i) qq = buf.indexOf(q, i);
         continue;
       }
-      if (buf[qq + 1] === q) { if (build) out.push(buf.slice(segStart, qq), q); i = segStart = qq + 2; continue; }
       if (qq + 1 >= buf.length) need();
+      if (buf[qq + 1] === q) {
+        if (build) out.push(buf.slice(segStart, qq), q);
+        i = segStart = qq + 2;
+        qq = buf.indexOf(q, i);
+        if (bs >= 0 && bs < i) bs = backslashFrom(i);
+        continue;
+      }
       if (build) out.push(buf.slice(segStart, qq));
       pos = qq + 1;
       return build ? out.join("") : null;
@@ -82,7 +100,7 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
     const c = buf[pos];
     if (c === "'" || c === '"') return readString(build);
     // introducers: _binary'…' _utf8mb4'…' N'…' X'…' b'…'
-    const intro = /^(_[a-z0-9]+\s*|N(?=')|[Xx](?=')|[Bb](?='))/.exec(buf.slice(pos, pos + 16));
+    const intro = (c === "_" || ((c === "N" || c === "X" || c === "x" || c === "B" || c === "b") && buf[pos + 1] === "'")) ? /^(_[a-z0-9]+\s*|N(?=')|[Xx](?=')|[Bb](?='))/.exec(buf.slice(pos, pos + 24)) : null;
     if (intro && buf[pos + intro[0].length] === "'") {
       const kind = intro[0].trim();
       pos += intro[0].length;
@@ -92,7 +110,7 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
       return s;
     }
     let j = pos;
-    while (j < buf.length && buf[j] !== "," && buf[j] !== ")" && !/\s/.test(buf[j])) j++;
+    for (let ch = buf.charCodeAt(j); j < buf.length && ch !== 44 && ch !== 41 && ch > 32; ch = buf.charCodeAt(++j));
     if (j >= buf.length) need();
     const tok = buf.slice(pos, j);
     pos = j;
@@ -102,15 +120,16 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
     return tok; // numbers stay strings (no precision loss on BIGINT)
   }
 
+  const skipWs = () => { while (pos < buf.length && buf.charCodeAt(pos) <= 32) pos++; };
   function readTuple() {
     pos++; // (
     const vals = [];
     for (;;) {
-      while (pos < buf.length && /\s/.test(buf[pos])) pos++;
+      skipWs();
       if (pos >= buf.length) need();
       if (buf[pos] === ")") { pos++; return vals; }
       vals.push(readValue(emit));
-      while (pos < buf.length && /\s/.test(buf[pos])) pos++;
+      skipWs();
       if (pos >= buf.length) need();
       if (buf[pos] === ",") { pos++; continue; }
       if (buf[pos] === ")") { pos++; return vals; }
@@ -187,7 +206,7 @@ export async function scanDump(file, { wantRows = () => true, onCreate, onRow, o
           onStatement(readStatement());
         }
       } else {
-        while (pos < buf.length && /\s/.test(buf[pos])) pos++;
+        skipWs();
         if (pos >= buf.length) { if (eof) break; need(); }
         const c = buf[pos];
         if (c === "(") {

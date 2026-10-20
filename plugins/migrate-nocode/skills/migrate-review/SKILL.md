@@ -20,6 +20,9 @@ open it at the end of a migration.
 
 ## Build and open
 
+The `migrate` skill's setup copies `scripts/*`, `assets/review-template.html` and `assets/review-route.ts` into
+`tools/migrate/review/`. If they're missing, copy them now.
+
 ```bash
 node tools/migrate/review/build-review.mjs --measure --open        # re-measure, rebuild, open in the browser
 node tools/migrate/review/build-review.mjs --static review.html    # standalone file, no Next.js needed

@@ -539,7 +539,14 @@ export function literalCallArgs(js, prefixRe) {
 /** Library versions from script URLs, script bodies (license banners) and page globals. Cheap and best effort. */
 export function libFingerprints({ urls = [], bodies = [], globals = {} } = {}) {
   const libs = {};
-  const set = (k, v) => { if (v && !libs[k]) libs[k] = v; else if (!libs[k]) libs[k] = true; };
+  // Value: version string, true (present, version unknown) or an array when several versions are loaded.
+  const set = (k, v) => {
+    if (!v) { if (!libs[k]) libs[k] = true; return; }
+    const cur = libs[k];
+    if (!cur || cur === true) libs[k] = v;
+    else if (Array.isArray(cur)) { if (!cur.includes(v)) cur.push(v); }
+    else if (cur !== v) libs[k] = [cur, v];
+  };
   const URL_PATTERNS = [
     ["gsap", /gsap(?:@|\/|[.-])(\d+\.\d+\.\d+)/i], ["ScrollTrigger", /ScrollTrigger(?:@|\/|[.-])(\d+\.\d+\.\d+)/i],
     ["swiper", /swiper(?:@|\/|-bundle[.-]|[.-])(\d+(?:\.\d+){0,2})/i], ["jquery", /jquery(?:@|\/|[.-])(\d+\.\d+\.\d+)/i],
@@ -555,7 +562,8 @@ export function libFingerprints({ urls = [], bodies = [], globals = {} } = {}) {
     for (const [k, re] of URL_PATTERNS) { const m = u.match(re); if (m) set(k, m[1]); }
     for (const [k, re] of NAME_ONLY) if (re.test(u.split("?")[0])) set(k);
   }
-  const BODY = [["gsap", /GSAP\s+(\d+\.\d+\.\d+)/], ["ScrollTrigger", /ScrollTrigger\s+(\d+\.\d+\.\d+)/], ["swiper", /Swiper\s+(\d+\.\d+\.\d+)/],
+  // License banners only ("/*! GSAP 3.12.5", " * Swiper 11.1.4"): plain strings like "Requires GSAP 3.11.0" are not versions.
+  const BODY = [["gsap", /(?:\/\*!?|\n\s*\*)\s*GSAP\s+(\d+\.\d+\.\d+)/], ["ScrollTrigger", /(?:\/\*!?|\n\s*\*)\s*ScrollTrigger\s+(\d+\.\d+\.\d+)/], ["swiper", /(?:\/\*!?|\n\s*\*)\s*Swiper\s+(\d+\.\d+\.\d+)/],
     ["jquery", /jQuery v(\d+\.\d+\.\d+)/], ["splide", /Splide\.js\s*\n?\s*\*?\s*Version\s*:\s*(\d+\.\d+\.\d+)/], ["lottie", /lottie-web[^\d]{0,40}(\d+\.\d+\.\d+)/],
     ["owl", /Owl Carousel v(\d+\.\d+\.\d+)/], ["slick", /Version:\s*(\d+\.\d+\.\d+)\s*\n\s*Author: Ken Wheeler/], ["three", /REVISION\s*=\s*["'](\d+)["']/],
     ["lenis", /lenis[^\n]{0,80}version[^\d]{0,10}(\d+\.\d+\.\d+)/i], ["aos", /\bAOS\b.{0,200}data-aos/s]];

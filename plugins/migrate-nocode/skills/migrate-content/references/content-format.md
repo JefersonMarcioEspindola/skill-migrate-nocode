@@ -36,6 +36,11 @@ Files whose name starts with `_` are not collections. `content-validate.mjs` che
 }
 ```
 
+Large collections (more than 2000 items by default) keep `"items": []` and add `"itemCount": 12345` and
+`"itemFiles": ["post.items-0001.json", …]`; each part is `{ "collection", "part", "items": [] }`. This keeps every
+file small enough for `JSON.parse`. Read collections with `readCollection()` from `content-common.mjs`, which
+merges the parts.
+
 ### Field
 
 ```jsonc
@@ -45,7 +50,7 @@ Files whose name starts with `_` are not collections. `content-validate.mjs` che
   "type": "image",            // REQUIRED. one of the types below
   "required": false,          // true when the source marks it required
   "multiple": false,          // image | file | option: value is an array
-  "options": [{ "value": "red", "label": "Red" }],   // option only
+  "options": [{ "value": "red", "label": "Red", "sourceId": "opt_1" }],   // option only; sourceId = platform option id
   "to": "blog-categories",    // reference | multi-reference: target collection (string, or array when polymorphic)
   "fields": [ /* Field */ ],  // json only: sub-schema of a repeater/group (same Field shape, recursive)
   "layouts": [{ "name": "hero", "label": "Hero", "fields": [] }],  // json + structure "flexible" only
@@ -62,7 +67,7 @@ Files whose name starts with `_` are not collections. `content-validate.mjs` che
 | `number` | number |
 | `boolean` | boolean |
 | `date` | ISO 8601 string. Date-only values stay `YYYY-MM-DD`; date-times are UTC `…Z` when the timezone is known |
-| `image` | `{ "url": "https://…", "alt"?, "width"?, "height"?, "assetId"? }`; an array of these when `multiple` |
+| `image` | `{ "url": "https://…", "alt"?, "width"?, "height"?, "assetId"? }`; an array of these when `multiple`. `url` may be `null` only when `localFile` is set (e.g. Ycode inline SVGs) |
 | `file` | `{ "url": "https://…", "name"?, "mime"?, "size"?, "assetId"? }`; an array when `multiple` |
 | `reference` | string: the target item's `id` (source id, not slug) |
 | `multi-reference` | string[]: target item ids, in source order |
@@ -83,6 +88,7 @@ tab/html/endpoint) are not exported.
 ```jsonc
 {
   "id": "6512…",               // REQUIRED. stable source id (string). Same id across locales of one item
+  "sourceId": "9",             // optional. original platform id when `id` is a translation-group id (WPML/Polylang)
   "slug": "my-first-post",     // REQUIRED. unique per (collection, locale)
   "locale": "pt-br",           // optional. absent = default/only locale
   "status": "published",       // REQUIRED. published | draft
@@ -99,6 +105,9 @@ tab/html/endpoint) are not exported.
 - `data` keys must be declared in `fields`. Order of `items` = source order (manual order when the platform has one).
 - Localized content: one item per (id, locale). Non-localized fields repeat the same value in every locale.
 - References always point to ids; slugs are resolved by the exporter (CSV sources reference by slug).
+- CSV sources without item ids (Framer CMS Export) use the slug as `id`.
+- `url` paths keep the old site's structure (including a subdirectory such as `/news` for WordPress in a folder),
+  without the trailing slash: Next.js strips trailing slashes before `redirects()` run.
 
 ## Rich text
 

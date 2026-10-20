@@ -40,6 +40,18 @@ export function scrollFn(y) {
   try { window.locomotiveScroll?.scrollTo?.(y, { duration: 0, disableLerp: true }); } catch {}
 }
 
+/** Deterministic Math.random (same seeded sequence on both sides): sites that open on a random slide, shuffle a
+ *  list or scatter particles then render the same thing live and local. Disable with config.seedRandom = false. */
+export async function seedRandom(page, seed = 0x5eed) {
+  let on = true;
+  try { on = config().seedRandom !== false; } catch {}
+  if (!on) return;
+  await page.addInitScript((seed) => {
+    let a = seed >>> 0;
+    Math.random = function random() { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }, seed);
+}
+
 /** Installs a paused fake clock. Retries with a later pause target when Playwright says
  *  "Cannot fast-forward to the past" (the installed clock already ran past the target). */
 export async function installClock(page) {
@@ -112,8 +124,11 @@ export const ensureHelpers = (page) => page.evaluate(HELPERS_SRC);
 export async function preparePage(page, url, { side = "live", settle = 1800, clock = true, scroll = true, motion = false } = {}) {
   const c = config();
   const tick = async (ms) => (clock ? page.clock.runFor(ms) : page.waitForTimeout(ms));
-  if (side === "live") await routeFontsFromMirror(page);
+  // Installed on BOTH sides: request interception disables the HTTP cache and changes load timing, so an
+  // asymmetric setup alone produced pixel noise (image raster differences). Only live font URLs with a mirror hit.
+  await routeFontsFromMirror(page);
   if (side === "local" && !motion && c.staticFlag) await page.addInitScript((flag) => { window[flag] = true; }, c.staticFlag);
+  await seedRandom(page);
   if (clock) await installClock(page);
   await page.goto(url, { waitUntil: "load", timeout: 90000 });
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -190,7 +205,9 @@ export async function freezeAnimations(page, at = 1000) {
 export async function fullShot(page) {
   await page.evaluate(() => Promise.all([...document.images].map((im) => (im.naturalWidth ? im.decode().catch(() => null) : null))));
   const h = await page.addStyleTag({ content: "*, *::before, *::after { will-change: auto !important; }" }).catch(() => null);
-  await page.waitForTimeout(50);
+  // Chromium re-rasters layers that lost will-change; it first paints them with low-quality image filtering and
+  // only later in high quality. Waiting a little lets both sides reach the high-quality raster.
+  await page.waitForTimeout(400);
   const buf = await page.screenshot({ fullPage: true, animations: "allow", caret: "hide" });
   if (h) await h.evaluate((el) => el.remove()).catch(() => {});
   return buf;

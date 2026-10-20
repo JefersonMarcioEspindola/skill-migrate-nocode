@@ -294,6 +294,14 @@ export async function newPage(browser, width, height = 900) {
 /** Scroll that also drives smooth-scroll libraries (Lenis, ScrollSmoother, Locomotive) — compare.mjs when present. */
 export const scrollFn = cmp.scrollFn || ((y) => window.scrollTo(0, y));
 
+/** Paused fake clock (timers, rAF and Date advance only with page.clock.runFor) — compare.mjs when present. */
+export async function installClock(page) {
+  if (cmp.installClock) return cmp.installClock(page);
+  const t0 = Math.floor(Date.now() / 60000) * 60000;
+  await page.clock.install({ time: new Date(t0) });
+  await page.clock.pauseAt(new Date(t0 + 60000));
+}
+
 /** Navigates and waits for load (+ network idle up to 6 s). Returns the HTTP status. */
 export async function gotoPage(page, url, { timeout = 90000, initScript } = {}) {
   if (initScript) await page.addInitScript(initScript);
@@ -303,8 +311,9 @@ export async function gotoPage(page, url, { timeout = 90000, initScript } = {}) 
   return res?.status() ?? 0;
 }
 
-/** Scrolls the whole page (triggers lazy load and scroll reveals), then returns to the top. */
-export async function scrollThrough(page, { step = 0.7, pause = 120 } = {}) {
+/** Scrolls the whole page (triggers lazy load and scroll reveals), then returns to the top.
+ *  eager: also switch img[loading=lazy] to eager (changes the DOM: never for DOM comparisons). */
+export async function scrollThrough(page, { step = 0.7, pause = 120, eager = false } = {}) {
   const vh = page.viewportSize()?.height || 900;
   const total = await page.evaluate(() => document.documentElement.scrollHeight);
   for (let y = 0; y <= total; y += Math.floor(vh * step)) { await page.evaluate(scrollFn, y); await page.waitForTimeout(pause); }
@@ -312,7 +321,7 @@ export async function scrollThrough(page, { step = 0.7, pause = 120 } = {}) {
   await page.waitForTimeout(400);
   await page.evaluate(scrollFn, 0);
   await page.waitForTimeout(500);
-  await page.evaluate(() => { for (const img of document.querySelectorAll("img[loading=lazy]")) img.loading = "eager"; }).catch(() => {});
+  if (eager) await page.evaluate(() => { for (const img of document.querySelectorAll("img[loading=lazy]")) img.loading = "eager"; }).catch(() => {});
 }
 
 /**

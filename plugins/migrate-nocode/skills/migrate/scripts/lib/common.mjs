@@ -47,6 +47,12 @@ const DEFAULTS = {
   dynamicRegions: [],
   publicDir: "public",
   mirrorPrefix: "/_m",
+  defaultLocale: null,
+  reviewLang: "en",
+  userAgent: null,
+  browserLocale: null,
+  snapshot: null,
+  i18n: {},
 };
 
 let cached;
@@ -73,11 +79,23 @@ export function config() {
 export const SNAP_DIR = () => path.join(ROOT, config().snapshotsDir);
 export const OUT_DIR = () => path.join(ROOT, config().outDir);
 
-/** "/" -> "index", "/work/x" -> "work__x", "/pt-br/about" -> "pt-br__about" */
-export const slugOf = (route) => (route === "/" ? "index" : route.replace(/^\//, "").replace(/\/$/, "").replace(/\//g, "__") || "index");
-export const routeOf = (slug) => (slug === "index" ? "/" : "/" + slug.replace(/__/g, "/"));
+const probe = () => { try { return config().notFoundProbe; } catch { return DEFAULTS.notFoundProbe; } };
 
+/** "/" -> "index", "/work/x" -> "work__x", "/pt-br/about" -> "pt-br__about", notFoundProbe -> "404" */
+export const slugOf = (route) => {
+  if (route === probe() || route === "404") return "404";
+  return route === "/" ? "index" : route.replace(/^\//, "").replace(/\/$/, "").replace(/\//g, "__") || "index";
+};
+export const routeOf = (slug) => (slug === "404" ? probe() : slug === "index" ? "/" : "/" + slug.replace(/__/g, "/"));
+
+/** Latest snapshot, unless pinned by env MIGRATE_SNAPSHOT or config "snapshot" (folder name or path). */
 export function latestSnapshot() {
+  const pin = process.env.MIGRATE_SNAPSHOT || (fs.existsSync(CONFIG_FILE) ? config().snapshot : null);
+  if (pin) {
+    const p = path.isAbsolute(pin) ? pin : fs.existsSync(path.join(ROOT, pin)) ? path.join(ROOT, pin) : path.join(SNAP_DIR(), pin);
+    if (!fs.existsSync(p)) throw new Error(`Pinned snapshot not found: ${pin}`);
+    return p;
+  }
   const dir = SNAP_DIR();
   const dirs = fs.existsSync(dir) ? fs.readdirSync(dir).filter((d) => /^\d{4}-\d{2}-\d{2}(T\d{4})?$/.test(d)).sort() : [];
   if (!dirs.length) throw new Error("No snapshot yet. Run: node tools/migrate/snapshot.mjs");
@@ -115,9 +133,10 @@ export const numListArg = (name, def) => listArg(name).map(Number).filter(Boolea
 
 /** Host matches an entry of assetHosts ("*.x.com" wildcards allowed). */
 export function isMirroredHost(host, hosts = config().assetHosts) {
+  const bare = (h) => h.replace(/^www\./, "");
   const liveHost = new URL(config().live).host;
-  if (host === liveHost) return true;
-  return hosts.some((h) => (h.startsWith("*.") ? host.endsWith(h.slice(1)) || host === h.slice(2) : host === h));
+  if (bare(host) === bare(liveHost)) return true;
+  return hosts.some((h) => (h.startsWith("*.") ? host.endsWith(h.slice(1)) || host === h.slice(2) : bare(host) === bare(h)));
 }
 
 /**
@@ -129,13 +148,16 @@ export function isMirroredHost(host, hosts = config().assetHosts) {
 export function mirrorPath(url) {
   const c = config();
   const u = new URL(url, c.live);
-  let p = decodeURIComponent(u.pathname);
+  let p;
+  try { p = decodeURIComponent(u.pathname); } catch { p = u.pathname; }
   if (p.endsWith("/")) p += "index";
-  const ext = path.extname(p);
-  const base = ext ? p.slice(0, -ext.length) : p;
-  const q = u.search ? "__" + crypto.createHash("sha1").update(u.search).digest("hex").slice(0, 8) : "";
-  const safe = (base + q + ext).replace(/[^A-Za-z0-9._\-/@]/g, "_");
-  return `${c.mirrorPrefix}/${u.host}${safe}`;
+  const ext = path.extname(p).replace(/[^A-Za-z0-9.]/g, "");
+  const base = ext ? p.slice(0, -path.extname(p).length) : p;
+  const safeBase = base.replace(/[^A-Za-z0-9._\-/@]/g, "_");
+  // Hash the query (variants stay distinct) and, when characters were replaced, the original path (no collisions).
+  const key = (u.search || "") + (safeBase !== base ? "|" + base : "");
+  const q = key ? "__" + crypto.createHash("sha1").update(key).digest("hex").slice(0, 8) : "";
+  return `${c.mirrorPrefix}/${u.host}${safeBase}${q}${ext}`;
 }
 
 export const mirrorFile = (url) => path.join(ROOT, config().publicDir, mirrorPath(url));

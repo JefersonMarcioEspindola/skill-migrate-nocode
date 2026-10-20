@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs, listOpt, parseRoutes, fillRoute, die, slugify, toFieldName, uniqueName, sanitizeHtml, findShortcodes, toISODate, toNumber, toBoolean, decodeEntities, stripTags, isUrlLike, ContentWriter } from "./lib/content-common.mjs";
 import { maybeUnserialize, stats as unserStats } from "./lib/php-unserialize.mjs";
-import { loadDump, metaOf, registeredTypes, registeredTaxonomies, acfGroups, acfLocationTypes, readAcfJsonDir, jetMetaBoxes, jetRelations, attachments, stripSize, multilingual, permalinkFront, oldPostPath, oldTermPath, hierPath, termsOf, wpautop, BUILDERS, INTERNAL_TYPES, OUT_OF_SCOPE_TYPES, SKIP_TAXONOMIES, siteUrl } from "./lib/wp-core.mjs";
+import { SECRET_FIELD_NAME, homePath, loadDump, metaOf, registeredTypes, registeredTaxonomies, acfGroups, acfLocationTypes, readAcfJsonDir, jetMetaBoxes, jetRelations, attachments, stripSize, multilingual, permalinkFront, oldPostPath, oldTermPath, hierPath, termsOf, wpautop, BUILDERS, INTERNAL_TYPES, OUT_OF_SCOPE_TYPES, SKIP_TAXONOMIES, siteUrl } from "./lib/wp-core.mjs";
 import { RestSource } from "./lib/wp-rest.mjs";
 
 const HELP = fs.readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 21).map((l) => l.replace(/^\/\/ ?/, "")).join("\n");
@@ -40,31 +40,8 @@ function routeFor(keys, item, defaultTpl, ctx = {}) {
 }
 
 // ====================================================================== SQL dump
-async function fromDump() {
-  const file = String(args.dump);
-  if (!fs.existsSync(file)) die(`dump not found: ${file}`);
-  let selected = null;
-  const pickTypes = (m) => {
-    if (selected) return selected;
-    const found = new Set([...m.posts.values()].map((p) => p.post_type));
-    selected = new Set(onlyTypes.length ? onlyTypes : [...found].filter((t) => !INTERNAL_TYPES.test(t) && !["attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request"].includes(t) && !OUT_OF_SCOPE_TYPES.has(t)));
-    for (const t of onlyTypes) if (!found.has(t)) w.warn("requested post type not found in dump", t);
-    return selected;
-  };
-  let mRef;
-  const m = await loadDump(file, {
-    prefix: typeof args.prefix === "string" ? args.prefix : undefined,
-    keepContent: (t) => t !== "revision",
-    metaFor: (id, type) => { const sel = pickTypes(mRef); return sel.has(type) || type === "nav_menu_item" ? true : type === "attachment" ? "attachment" : false; },
-    onProgress: undefined,
-  }).catch((e) => die(e.message));
-  mRef = m;
-  // loadDump calls metaFor during pass 2 after posts are loaded; mRef is set by then through this closure
-  return m;
-}
-
 async function exportDump() {
-  // pass 1 + 2 (mRef trick: loadDump resolves posts before calling metaFor in pass 2)
+  // pass 1 loads posts/options/terms (onLoaded), pass 2 reads postmeta of the selected types + attachments
   let m;
   {
     const file = String(args.dump);
@@ -79,9 +56,10 @@ async function exportDump() {
       for (const t of onlyTypes) if (!found.has(t)) w.warn("requested post type not found in dump", t);
       return selected;
     };
+    const defaultType = (t) => !INTERNAL_TYPES.test(t) && !["attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request"].includes(t) && !OUT_OF_SCOPE_TYPES.has(t);
     m = await loadDump(file, {
       prefix: typeof args.prefix === "string" ? args.prefix : undefined,
-      keepContent: (t) => t !== "revision",
+      keepContent: (t) => t === "wp_block" || (onlyTypes.length ? onlyTypes.includes(t) : defaultType(t)),
       metaFor: (id, type) => (pick().has(type) || type === "nav_menu_item" ? true : type === "attachment" ? "attachment" : false),
       onLoaded: (mm) => (holder.m = mm),
     }).catch((e) => die(e.message));
@@ -100,7 +78,8 @@ async function exportDump() {
   const groups = acfGroups(m, acfJson).filter((g) => g.active);
   const boxes = jetMetaBoxes(m).filter((b) => b.objectType === "post");
   const rels = jetRelations(m);
-  const ctxUrl = { types, taxonomies: taxDefs, front, langOf: ml.langOf, defaultLang: ml.defaultLang };
+  const hp = homePath(m, typeof args.site === "string" ? args.site : undefined);
+  const ctxUrl = { types, taxonomies: taxDefs, front, langOf: ml.langOf, defaultLang: ml.defaultLang, homePath: hp };
   const selected = [...m.selected];
   const usedCol = new Set();
   const colOfType = new Map(selected.map((t) => [t, uniqueName(usedCol, slugify(t) || t)]));
@@ -111,6 +90,7 @@ async function exportDump() {
   for (const t of selected) for (const p of postsOf(t)) for (const tt of termsOf(m, p.ID)) if (!SKIP_TAXONOMIES.has(tt.taxonomy)) usedTax.add(tt.taxonomy);
   const colOfTax = new Map([...usedTax].map((x) => [x, uniqueName(usedCol, usedCol.has(slugify(x)) ? `tax-${slugify(x)}` : slugify(x))]));
   const srcOf = new WeakMap(); // normalized field -> source definition (kept out of the JSON)
+  const skippedSecretKeys = new Set(); // ACF password fields: never exported, not even listed as unmapped
   const newUrlOfPost = new Map(); // post id -> new path (for menus / redirection plugin)
   const oldToNew = new Map();
 
@@ -149,6 +129,7 @@ async function exportDump() {
   const typeCollections = (list) => { const arr = [].concat(list || []).filter(Boolean).map((t) => colOfType.get(t) || slugify(t)); return arr.length === 1 ? arr[0] : arr.length ? arr : selected.map((t) => colOfType.get(t)); };
   function acfField(f, used, where) {
     const s = f.settings || {};
+    if (f.type === "password" || SECRET_FIELD_NAME.test(f.name || "")) { skippedSecretKeys.add(f.name); w.note(`ACF field "${f.name}" (${where}) looks like a secret and was not exported.`); return null; }
     const base = { name: uniqueName(used, toFieldName(f.name || f.key)), label: f.label || f.name, source: { key: f.name, type: `acf:${f.type}`, id: f.key } };
     if (f.required) base.required = true;
     let out;
@@ -178,7 +159,6 @@ async function exportDump() {
       case "repeater": { const u = new Set(); out = { ...base, type: "json", structure: "repeater", fields: f.sub_fields.map((x) => acfField(x, u, where)).filter(Boolean) }; break; }
       case "group": { const u = new Set(); out = { ...base, type: "json", structure: "group", fields: f.sub_fields.map((x) => acfField(x, u, where)).filter(Boolean) }; break; }
       case "flexible_content": out = { ...base, type: "json", structure: "flexible", layouts: f.layouts.map((l) => { const u = new Set(["layout"]); return { name: l.name, label: l.label, fields: l.sub_fields.map((x) => acfField(x, u, where)).filter(Boolean) }; }) }; break;
-      case "password": w.note(`ACF password field "${f.name}" (${where}) was skipped on purpose.`); return null;
       case "message": case "tab": case "accordion": return null;
       case "clone": w.warn("ACF clone field not expanded (exported raw)", `${where}.${f.name}`); out = { ...base, type: "json" }; break;
       default: w.unknownType(`acf:${f.type}`, `${where}.${f.name}`); out = { ...base, type: "json" };
@@ -246,6 +226,7 @@ async function exportDump() {
   // ---------------------------------------------------------------- JetEngine
   function jetField(f, used, where) {
     if ((f.object_type || "field") !== "field") return null;
+    if (SECRET_FIELD_NAME.test(f.name || "")) { skippedSecretKeys.add(f.name); w.note(`JetEngine field "${f.name}" (${where}) looks like a secret and was not exported.`); return null; }
     const base = { name: uniqueName(used, toFieldName(f.name)), label: f.title || f.name, source: { key: f.name, type: `jetengine:${f.type}` } };
     if (f.is_required === true || f.is_required === "true") base.required = true;
     const opts = () => [].concat(f.options || []).map((o) => ({ value: String(o.key ?? o.value), label: String(o.value ?? o.key) }));
@@ -291,7 +272,7 @@ async function exportDump() {
   // ---------------------------------------------------------------- per post type
   const seoKeys = { seoTitle: ["_yoast_wpseo_title", "rank_math_title", "_seopress_titles_title"], seoDescription: ["_yoast_wpseo_metadesc", "rank_math_description", "_seopress_titles_desc"], seoCanonical: ["_yoast_wpseo_canonical", "rank_math_canonical_url", "_seopress_robots_canonical"], seoImage: ["_yoast_wpseo_opengraph-image", "rank_math_facebook_image", "_seopress_social_fb_img"] };
   const knownMeta = /^(_edit_lock|_edit_last|_thumbnail_id|_wp_page_template|_wp_old_slug|_wp_old_date|_encloseme|_pingme|_wp_trash_meta_.*|_elementor_.*|_yoast_wpseo_.*|rank_math_.*|_seopress_.*|_menu_item_.*|_oembed_.*|_wp_desired_post_slug|_wp_attached_file|_wp_attachment_.*|_fl_builder_.*|_bricks_.*|_et_.*|_wpb_.*|ct_.*|_pingme|_jet_.*|_aioseo_.*|_links_to.*|_wpml_.*|_icl_.*|_pll_.*)$/;
-  const extraMeta = listOpt(args.meta);
+  const extraMeta = listOpt(args.meta).filter((k) => { if (SECRET_FIELD_NAME.test(k)) { w.note(`--meta ${k} refused: looks like a secret.`); return false; } return true; });
   const unmapped = new Map();
   const redirectsSeen = new Set();
   const authorsUsed = new Set();
@@ -399,7 +380,7 @@ async function exportDump() {
       for (const f of jetFields) { const v = jetValue(f, metaOf(m, p.ID, f.source.key), { ...usage, field: f.name }); if (v !== null && v !== undefined && !(Array.isArray(v) && !v.length)) data[f.name] = v; }
       for (const [r, f] of relFields) { const kids = r.rows.filter((x) => String(x.parent_object_id) === p.ID).map((x) => groupId(x.child_object_id)); if (kids.length) data[f.name] = f.type === "reference" ? kids[0] : kids; }
       for (const f of extraFields) { const v = metaOf(m, p.ID, f.source.key); if (v !== undefined && v !== "") data[f.name] = f.type === "json" ? maybeUnserialize(v) : String(v); }
-      for (const [k] of meta) if (!knownMeta.test(k) && !mappedKeys.has(k) && !acfPrefixes.some((pre) => k.startsWith(pre) || k.startsWith("_" + pre)) && !(k.startsWith("_") && mappedKeys.has(k.slice(1)))) unmapped.set(k, (unmapped.get(k) || 0) + 1);
+      for (const [k] of meta) if (!knownMeta.test(k) && !mappedKeys.has(k) && !skippedSecretKeys.has(k.replace(/^_/, "")) && !acfPrefixes.some((pre) => k.startsWith(pre) || k.startsWith("_" + pre)) && !(k.startsWith("_") && mappedKeys.has(k.slice(1)))) unmapped.set(k, (unmapped.get(k) || 0) + 1);
       item.data = data;
       items.push(item);
 
@@ -411,7 +392,7 @@ async function exportDump() {
       newUrlOfPost.set(p.ID, to);
       if (status === "published") {
         if (oldPath) { w.redirect({ from: oldPath, to, collection: col, item: id, reason: "permalink", confidence: "high" }); oldToNew.set(oldPath, to); }
-        w.redirect({ from: type === "page" ? `/?page_id=${p.ID}` : `/?p=${p.ID}`, to, collection: col, item: id, reason: "wp shortlink (query string: use middleware or `has` in next.config)", confidence: "high" });
+        w.redirect({ from: `${hp}${type === "page" ? `/?page_id=${p.ID}` : `/?p=${p.ID}`}`, to, collection: col, item: id, reason: "wp shortlink (query string: use middleware or `has` in next.config)", confidence: "high" });
         for (const old of meta.get("_wp_old_slug") || []) { const op = oldPostPath(m, { ...p, post_name: old }, ctxUrl); if (op) w.redirect({ from: op, to, collection: col, item: id, reason: "_wp_old_slug", confidence: "high" }); }
         if (type === "post" && /%year%/.test(m.options.permalink_structure || "") && p.post_date) { const [y, mo] = p.post_date.split("-"); dateArchives.add(`/${y}`); dateArchives.add(`/${y}/${mo}`); }
       }
@@ -441,7 +422,7 @@ async function exportDump() {
 
   // ---------------------------------------------------------------- users (public display data only)
   if (authorsUsed.size) {
-    const items = [...authorsUsed].map((uid) => { const u = m.users.get(uid); const item = { id: String(uid), slug: u.user_nicename || `user-${uid}`, status: "published", url: `/author/${u.user_nicename}`, data: { name: u.display_name || u.user_nicename } }; if (routesArg.author) w.redirect({ from: item.url, to: fillRoute(routesArg.author, item), collection: "users", item: item.id, reason: "author archive", confidence: "low" }); return item; });
+    const items = [...authorsUsed].map((uid) => { const u = m.users.get(uid); const item = { id: String(uid), slug: u.user_nicename || `user-${uid}`, status: "published", url: `${hp}/author/${u.user_nicename}`, data: { name: u.display_name || u.user_nicename } }; if (routesArg.author) w.redirect({ from: item.url, to: fillRoute(routesArg.author, item), collection: "users", item: item.id, reason: "author archive", confidence: "low" }); return item; });
     w.addCollection({ collection: "users", label: "Authors", titleField: "name", ref: "users", fields: [{ name: "name", label: "Display name", type: "text", required: true }], items });
     w.note("Users: only id, nicename and display name are exported (no emails, logins or passwords).");
   }
@@ -470,8 +451,8 @@ async function exportDump() {
 
   // ---------------------------------------------------------------- extra redirects
   const archiveTo = routesArg.archive || "/blog";
-  for (const d of [...dateArchives].sort()) w.redirect({ from: d, to: archiveTo, reason: "date archive", confidence: "low" });
-  if (routesArg.feed) w.redirect({ from: "/feed", to: routesArg.feed, reason: "RSS feed", confidence: "low" });
+  for (const d of [...dateArchives].sort()) w.redirect({ from: hp + d, to: archiveTo, reason: "date archive", confidence: "low" });
+  if (routesArg.feed) w.redirect({ from: `${hp}/feed`, to: routesArg.feed, reason: "RSS feed", confidence: "low" });
   for (const r of m.redirections.filter((r) => r.status !== "disabled" && !Number(r.regex))) {
     const target = String(r.action_data || "");
     const tPath = target.replace(/^https?:\/\/[^/]+/i, "").replace(/\/$/, "") || "/";
@@ -503,21 +484,27 @@ async function exportRest() {
   const maxPages = args.maxPages ? Number(args.maxPages) : Infinity;
   const perPage = Math.min(100, Number(args.perPage) || 100);
   const skip = new Set(["attachment", "nav_menu_item", "wp_block", "wp_template", "wp_template_part", "wp_navigation", "wp_font_family", "wp_font_face", "wp_global_styles"]);
-  const typeList = disc.types.filter((t) => t.rest_base && (onlyTypes.length ? onlyTypes.includes(t.slug) || onlyTypes.includes(t.rest_base) : !skip.has(t.slug) && !OUT_OF_SCOPE_TYPES.has(t.slug)));
+  const typeList = disc.types.filter((t) => t.rest_base && !/[(?]/.test(t.rest_base) && (onlyTypes.length ? onlyTypes.includes(t.slug) || onlyTypes.includes(t.rest_base) : !skip.has(t.slug) && !OUT_OF_SCOPE_TYPES.has(t.slug)));
   const usedCol = new Set();
   const colOfType = new Map(typeList.map((t) => [t.slug, uniqueName(usedCol, slugify(t.slug))]));
   const taxBySlug = new Map(disc.taxonomies.map((t) => [t.slug, t]));
   const fetched = new Map();
   const mediaIds = new Set();
   const usedTax = new Set();
+  const termIds = new Map(); // taxonomy -> Set(ids) referenced by exported items
   const authors = new Set();
   const local = (u) => { try { const x = new URL(u); return (x.pathname.replace(/\/$/, "") || "/") + x.search; } catch { return null; } };
+  const hp = (() => { try { return new URL(site).pathname.replace(/\/+$/, ""); } catch { return ""; } })();
   for (const t of typeList) {
     const r = await src.all(`/${t.rest_namespace || "wp/v2"}/${t.rest_base}`, { context: "view" }, { perPage, maxPages });
     if (r.status >= 400) { w.warn(`REST type not readable (HTTP ${r.status})`, t.slug); continue; }
     if (r.truncated) w.warn("REST pagination stopped by --max-pages (export is partial)", `${t.slug}: ${r.items.length} of ${r.total ?? "?"} items`);
     fetched.set(t.slug, r.items);
-    for (const p of r.items) { if (p.featured_media) mediaIds.add(p.featured_media); if (p.author) authors.add(p.author); for (const tx of t.taxonomies || []) if (Array.isArray(p[taxBySlug.get(tx)?.rest_base])) usedTax.add(tx); }
+    for (const p of r.items) {
+      if (p.featured_media) mediaIds.add(p.featured_media);
+      if (p.author) authors.add(p.author);
+      for (const tx of t.taxonomies || []) { const v = p[taxBySlug.get(tx)?.rest_base]; if (Array.isArray(v) && v.length) { usedTax.add(tx); const set = termIds.get(tx) || new Set(); v.forEach((id) => set.add(id)); termIds.set(tx, set); } }
+    }
   }
   // media by id (featured images); inline images keep their URLs
   const media = new Map();
@@ -578,23 +565,38 @@ async function exportRest() {
       const defTpl = t.slug === "post" ? "/blog/:slug" : t.slug === "page" ? "/:path" : `/${col}/:slug`;
       const to = routeFor([t.slug, col], { ...item, path: oldPath && t.hierarchical ? oldPath.replace(/^\//, "") : item.slug }, defTpl);
       if (item.status === "published" && oldPath) w.redirect({ from: oldPath, to, collection: col, item: id, reason: "permalink (REST link)", confidence: "high" });
-      if (item.status === "published") w.redirect({ from: t.slug === "page" ? `/?page_id=${id}` : `/?p=${id}`, to, collection: col, item: id, reason: "wp shortlink (query string)", confidence: "high" });
+      if (item.status === "published") w.redirect({ from: `${hp}${t.slug === "page" ? `/?page_id=${id}` : `/?p=${id}`}`, to, collection: col, item: id, reason: "wp shortlink (query string)", confidence: "high" });
       return item;
     });
     w.addCollection({ collection: col, label: t.name || t.slug, titleField: F.title.name, ref: t.slug, fields, items, sourceExtra: { restBase: t.rest_base } });
   }
   for (const [tx, col] of colOfTax) {
     const tdef = taxBySlug.get(tx);
-    const r = await src.all(`/${tdef.rest_namespace || "wp/v2"}/${tdef.rest_base}`, {}, { perPage, maxPages });
-    if (r.truncated) w.warn("taxonomy pagination stopped by --max-pages", tx);
+    // only the terms the exported items use (+ their parents), fetched by id: polite and complete
+    const want = new Set(termIds.get(tx) || []), got = new Map();
+    for (let round = 0; round < 4 && [...want].some((id) => !got.has(id)); round++) {
+      const ids = [...want].filter((id) => !got.has(id));
+      for (let i = 0; i < ids.length; i += 100) {
+        const r = await src.get(`/${tdef.rest_namespace || "wp/v2"}/${tdef.rest_base}`, { include: ids.slice(i, i + 100).join(","), per_page: 100 });
+        for (const x of Array.isArray(r.body) ? r.body : []) got.set(x.id, x);
+        for (const id of ids.slice(i, i + 100)) if (!got.has(id)) got.set(id, null);
+      }
+      for (const x of got.values()) if (x?.parent) want.add(x.parent);
+    }
+    const r = { items: [...got.values()].filter(Boolean) };
     const hier = r.items.some((x) => x.parent);
     const items = r.items.map((x) => { const item = { id: String(x.id), slug: safeDecode(x.slug), status: "published", ...(x.link ? { url: local(x.link) } : {}), data: { name: decodeEntities(x.name), ...(x.description ? { description: x.description } : {}), ...(hier && x.parent ? { parent: String(x.parent) } : {}) } }; const to = routeFor([tx, col], item, tx === "category" ? "/blog/category/:slug" : tx === "post_tag" ? "/blog/tag/:slug" : `/${col}/:slug`); if (item.url) w.redirect({ from: item.url, to, collection: col, item: item.id, reason: "taxonomy archive", confidence: "medium" }); return item; });
     w.addCollection({ collection: col, label: tdef.name || tx, titleField: "name", ref: `taxonomy:${tx}`, fields: [{ name: "name", label: "Name", type: "text", required: true }, { name: "description", label: "Description", type: "text" }, ...(hier ? [{ name: "parent", label: "Parent", type: "reference", to: col }] : [])], items });
   }
   if (authors.size) {
-    const r = await src.all("/wp/v2/users", {}, { perPage, maxPages: Math.min(maxPages, 10) });
+    const ids = [...authors];
+    const r = { items: [], status: 200 };
+    for (let i = 0; i < ids.length; i += 100) { const x = await src.get("/wp/v2/users", { include: ids.slice(i, i + 100).join(","), per_page: 100 }); r.status = x.status; if (Array.isArray(x.body)) r.items.push(...x.body); }
     if (r.status >= 400 || !r.items.length) w.warn("users endpoint not public: author references point to ids without a users collection", `HTTP ${r.status}`);
     else w.addCollection({ collection: "users", label: "Authors", titleField: "name", ref: "users", fields: [{ name: "name", label: "Display name", type: "text", required: true }], items: r.items.map((u) => ({ id: String(u.id), slug: u.slug, status: "published", ...(u.link ? { url: local(u.link) } : {}), data: { name: u.name } })) });
+    // keep references consistent: drop author ids the public users endpoint did not return
+    const known = new Set(r.items.map((u) => String(u.id)));
+    for (const c of w.collections) for (const f of c.fields.filter((x) => x.to === "users")) for (const it of c.items) if (it.data[f.name] && !known.has(it.data[f.name])) { w.warn("author not exposed by /wp/v2/users: reference dropped", `${c.collection}/${it.id}: ${it.data[f.name]}`); delete it.data[f.name]; }
   }
   return [`## WordPress REST specifics`, "", `- Site ${site} (${src.apiRoot === "rest_route" ? "?rest_route=" : "/wp-json"}), ${src.requests} HTTP requests (raw responses in \`${rawDir}\`; replay with --from-raw)`, "- REST exports only published content. `content.rendered` is final HTML (shortcodes expanded, no Gutenberg comments) and is also used as `raw` when `content.raw` is not available (needs auth).", "- ACF values come from the `acf` key (only for field groups with show_in_rest) and their types are inferred (`inferred: true`); prefer the SQL dump for a faithful schema.", "", "### Shortcodes still present in rendered HTML", "", ...(shortcodeTotals.size ? [...shortcodeTotals].map(([n, e]) => `- \`[${n}]\` ×${e.count}`) : ["None."])].join("\n");
 }

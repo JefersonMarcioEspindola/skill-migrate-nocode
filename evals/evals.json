@@ -1,0 +1,26 @@
+{
+  "skill_name": "migrate",
+  "evals": [
+    {
+      "id": 1,
+      "name": "ycode-intake-and-recon",
+      "prompt": "quero tirar o site https://www.estudio-exemplo.com.br do Ycode e passar pra Next.js igualzinho, sem mudar nada. comeca pelo reconhecimento, ainda nao tenho o backup",
+      "expected_output": "Detects Ycode with evidence, asks the intake questions in ONE message (scope, languages, git, polish layer, review password) with defaults, then after answers copies tools to tools/migrate, writes migrate.config.json with platform ycode, runs snapshot + assets + intent-check --target live, creates docs/layout-loop.md board and sends one reconnaissance question list.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "webflow-cms-and-visual",
+      "prompt": "My client's marketing site is on Webflow (Business plan) with a blog collection and a case studies collection. I have a read-only API token in .env.local as WEBFLOW_API_TOKEN. Plan the migration to Next.js so it looks identical, and tell me how the CMS part will work.",
+      "expected_output": "Loads migrate + migrate-webflow; keeps webflow.css verbatim (no Tailwind rewrite); explains IX2 options; visual first with JSON mocks; content stage via webflow-cms-export.mjs using the env token without printing it; normalized content format; dev database only; review page at the end.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "wordpress-acf-jetengine-content",
+      "prompt": "Tenho um WordPress com Elementor, ACF e JetEngine (CPT de imoveis com meta boxes e relacao com corretores). Copiei a pasta do wordpress e um dump .sql pra dentro de legacy/. Como eu puxo esse conteudo pro site novo em Next?",
+      "expected_output": "Loads migrate-wordpress + migrate-content; never prints wp-config credentials; runs wp-inventory on folder + sql; identifies ACF groups, JetEngine post types, meta boxes and relations; exports chosen types with wp-export to content/*.json; validates; maps to the target CMS with idempotent upserts on a dev database after confirmation; plans 301 redirects.",
+      "files": []
+    }
+  ]
+}

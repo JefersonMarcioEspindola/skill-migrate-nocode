@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config, OUT_DIR, slugOf, ensureDir, launch, arg } from "./lib/common.mjs";
-import { preparePage, newPage, installClock, routeFontsFromMirror, scrollFn, PREP_CSS, isMain } from "./lib/compare.mjs";
+import { preparePage, newPage, installClock, seedRandom, routeFontsFromMirror, scrollFn, PREP_CSS, isMain } from "./lib/compare.mjs";
 
 const NUM = ["o", "eo", "tx", "ty", "sx", "sy", "rot", "top", "left", "w", "h"];
 const TOL = { o: 0.01, eo: 0.01, sx: 0.005, sy: 0.005, rot: 0.5 }; // others (px): 0.5
@@ -51,8 +51,9 @@ export async function sampleMotion({ browser, url, side, width, selectors, mode 
     const take = async (t) => { const s = await page.evaluate(sampleIn, selectors); samples.push({ t: real ? Date.now() - t0 : t, ...s }); };
     const advance = (ms) => (real ? page.waitForTimeout(ms) : page.clock.runFor(ms));
     if (mode === "load") {
-      if (side === "live") await routeFontsFromMirror(page);
+      await routeFontsFromMirror(page);
       if (side === "local" && c.staticFlag && !motion) await page.addInitScript((f) => { window[f] = true; }, c.staticFlag);
+      await seedRandom(page);
       if (!real) await installClock(page);
       await page.goto(url, { waitUntil: real ? "domcontentloaded" : "load", timeout: 90000 });
       await page.addStyleTag({ content: PREP_CSS }).catch(() => {});

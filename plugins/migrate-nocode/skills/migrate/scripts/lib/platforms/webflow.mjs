@@ -26,15 +26,19 @@ const COMPONENTS = ["w-nav", "w-nav-menu", "w-dropdown", "w-slider", "w-slide", 
   "w-embed", "w-richtext", "w-dyn-list", "w-dyn-item", "w-dyn-empty", "w-pagination-wrapper", "w-tab-link", "w-checkbox", "w-radio", "w-select",
   "w-video", "w-iframe", "w-layout-grid", "w-layout-blockcontainer", "w-commerce-commercecartwrapper", "w-locales-list", "w-condition-invisible"];
 
-/** IX2 events that run on this page: element/page targets with "<pageId>|..." ids, or class targets present here. */
-function pageEvents(ix2, pageId, classSet) {
+/**
+ * IX2 events that run on this page: page targets ("<pageId>"), element targets ("<pageId>|<w-id>" or a bare w-id
+ * present on this page) and class targets whose classes exist here.
+ */
+function pageEvents(ix2, pageId, classSet, wIdSet) {
   const events = {};
   const lists = {};
   for (const [id, ev] of Object.entries(ix2.events || {})) {
     const targets = [ev.target, ...(ev.targets || [])].filter(Boolean);
     const hit = targets.some((t) => {
       if (t.appliesTo === "CLASS") return String(t.selector || t.id || "").split(/[\s.]+/).filter(Boolean).every((c) => classSet.has(c));
-      return String(t.id || "").startsWith(pageId);
+      const id = String(t.id || "");
+      return (pageId && id.startsWith(pageId)) || wIdSet.has(id.split("|").pop());
     });
     if (!hit) continue;
     events[id] = ev;
@@ -105,7 +109,7 @@ export function facts(rawHtml, renderedHtml, ctx) {
   if (ix2) {
     const json = JSON.stringify(ix2);
     const file = ctx.save(`platform/webflow-ix2-${sha1(json)}.json`, JSON.stringify(ix2, null, 1));
-    const page = pageId ? pageEvents(ix2, pageId, classSet) : { events: {}, actionLists: {} };
+    const page = pageEvents(ix2, pageId, classSet, new Set(wIds.map((x) => x.wId)));
     const types = {};
     for (const ev of Object.values(page.events)) types[ev.eventTypeId] = (types[ev.eventTypeId] || 0) + 1;
     out.ix2 = { file, script: ix2.script, events: Object.keys(ix2.events || {}).length, actionLists: Object.keys(ix2.actionLists || {}).length,

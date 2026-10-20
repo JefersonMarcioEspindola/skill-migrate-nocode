@@ -14,7 +14,7 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import pixelmatch from "pixelmatch";
 import { config, arg, listArg, numListArg, launch, slugOf } from "./lib/common.mjs";
-import { pickRoutes, outPath, writeJson, showText, newPage, gotoPage, scrollThrough, installHelpers, scrollFn, pool, isMain } from "./lib/qa.mjs";
+import { pickRoutes, outPath, writeJson, showText, newPage, gotoPage, scrollThrough, installHelpers, installClock, scrollFn, pool, isMain } from "./lib/qa.mjs";
 
 const ALL = ["hscroll", "header", "overflow", "links", "social", "cursor", "images", "center", "resize", "contrast"];
 
@@ -110,9 +110,27 @@ function staticChecks() {
       if (!clipped && getComputedStyle(el).position !== "fixed") list.push(el);
       if (list.length > 300) break;
     }
-    for (const el of list) if (!list.some((o) => o !== el && o.contains(el))) culprits.push(el);
+    for (const el of list) if (!list.some((o) => o !== el && o.contains(el))) culprits.push({ el, r: el.getBoundingClientRect() });
+    // Text runs overflowing a box that itself fits (long words, labels in a too-narrow grid column).
+    if (culprits.length < 5) {
+      const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let t = tw.nextNode(); t && culprits.length < 5; t = tw.nextNode()) {
+        if (!/\S/.test(t.data) || !t.parentElement || t.parentElement.closest("script,style,noscript,template")) continue;
+        const rg = document.createRange();
+        rg.selectNodeContents(t);
+        const r = [...rg.getClientRects()].find((x) => x.width > 0 && (x.right > vw + 1 || x.left < -1));
+        if (!r) continue;
+        let clipped = false;
+        for (let p = t.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+          const cs = getComputedStyle(p);
+          if (cs.position === "fixed") { clipped = true; break; }
+          if (cs.overflowX !== "visible") { const pr = p.getBoundingClientRect(); if (pr.right <= vw + 1 && pr.left >= -1) { clipped = true; break; } }
+        }
+        if (!clipped && !culprits.some((c) => c.el.contains(t))) culprits.push({ el: t.parentElement, r, text: t.data.trim().slice(0, 40) });
+      }
+    }
   }
-  out.hscroll = { scrollWidth: sw, clientWidth: vw, pannable, culprits: culprits.slice(0, 5).map((el) => { const r = el.getBoundingClientRect(); return { path: path(el), left: Math.round(r.left), right: Math.round(r.right) }; }) };
+  out.hscroll = { scrollWidth: sw, clientWidth: vw, pannable, culprits: culprits.slice(0, 5).map(({ el, r, text }) => ({ path: path(el), left: Math.round(r.left), right: Math.round(r.right), ...(text ? { text } : {}) })) };
 
   // 2. Fixed-height boxes whose text is clipped (overflow hidden/clip) or spills (overflow visible).
   const overflow = [];
@@ -383,46 +401,52 @@ function diffOutsideNoise(a, b, noise, dilate = 8) {
   return { ratio: Math.round((n / (w * h)) * 1e5) / 1e5, pixels: n, diff: d, noisePixels: mask ? mask.reduce((s, v) => s + v, 0) : 0 };
 }
 
+/**
+ * Desktop → mobile → desktop on page A; page B (control) stays at desktop. Both run under a paused fake clock advanced
+ * by the same amounts, so JS carousels/marquees sit on the same frame; CSS animations are disabled in the captures and
+ * what still moves in real time (B captured twice) is masked. Differences left = state broken by the round trip.
+ */
 async function resizeCheck(browser, url, { dW, mW, root, dir }) {
-  const page = await newPage(browser, dW);
+  const [A, B] = await Promise.all([newPage(browser, dW), newPage(browser, dW)]);
+  const both = (fn) => Promise.all([A, B].map(fn));
+  const shot = (p) => p.screenshot({ animations: "disabled", caret: "hide" });
+  const stillVideos = (p) => p.evaluate(() => { for (const v of document.querySelectorAll("video")) { try { v.pause(); v.currentTime = 0; } catch {} } });
   try {
-    await gotoPage(page, url);
-    await installHelpers(page);
-    await page.evaluate(findHeadersSrc);
-    await page.waitForTimeout(1500);
-    const s1 = PNG.sync.read(await page.screenshot());
-    await page.waitForTimeout(1200);
-    const s2buf = await page.screenshot();
-    const s2 = PNG.sync.read(s2buf);
-    const f1 = await fingerprint(page, root);
-    await page.setViewportSize({ width: mW, height: 900 });
-    await page.waitForTimeout(1000);
-    const midBuf = await page.screenshot();
-    await page.setViewportSize({ width: dW, height: 900 });
-    await page.waitForTimeout(1500);
-    const s3buf = await page.screenshot();
-    const s3 = PNG.sync.read(s3buf);
-    const f2 = await fingerprint(page, root);
-    const px = diffOutsideNoise(s2, s3, s1);
+    await both((p) => installClock(p).catch(() => {}));
+    await both((p) => gotoPage(p, url));
+    await both(async (p) => { await installHelpers(p); await p.evaluate(findHeadersSrc); await p.clock.runFor(2500).catch(() => {}); });
+    await A.setViewportSize({ width: mW, height: 900 });
+    await A.clock.runFor(1200).catch(() => {});
+    await A.waitForTimeout(400);
+    const midBuf = await shot(A);
+    await A.setViewportSize({ width: dW, height: 900 });
+    await A.clock.runFor(1200).catch(() => {});
+    await B.clock.runFor(2400).catch(() => {});
+    await both((p) => p.waitForTimeout(600));
+    await both(stillVideos);
+    const [bufA, bufB1] = await Promise.all([shot(A), shot(B)]);
+    await B.waitForTimeout(500);
+    const bufB2 = await shot(B);
+    const [fA, fB] = await Promise.all([fingerprint(A, root), fingerprint(B, root)]);
+    const px = diffOutsideNoise(PNG.sync.read(bufB1), PNG.sync.read(bufA), PNG.sync.read(bufB2));
     const changes = [];
-    if (Math.abs(f1.docHeight - f2.docHeight) > 2) changes.push(`document height ${f1.docHeight} → ${f2.docHeight}`);
-    if (f1.scrollWidth !== f2.scrollWidth) changes.push(`scrollWidth ${f1.scrollWidth} → ${f2.scrollWidth}`);
-    f1.kids.forEach((k, i) => {
-      const o = f2.kids[i];
+    if (Math.abs(fA.docHeight - fB.docHeight) > 2) changes.push(`document height ${fB.docHeight} → ${fA.docHeight}`);
+    if (fA.scrollWidth !== fB.scrollWidth) changes.push(`scrollWidth ${fB.scrollWidth} → ${fA.scrollWidth}`);
+    fB.kids.forEach((k, i) => {
+      const o = fA.kids[i];
       if (!o) return changes.push(`${k.path} missing after resize`);
       if (k.vis !== o.vis) changes.push(`${k.path} visible ${k.vis} → ${o.vis}`);
-      const d = k.box.map((v, j) => Math.abs(v - o.box[j]));
-      if (Math.max(...d) > 2) changes.push(`${k.path} [top,left,w,h] ${k.box.join(",")} → ${o.box.join(",")}`);
+      if (Math.max(...k.box.map((v, j) => Math.abs(v - o.box[j]))) > 2) changes.push(`${k.path} [top,left,w,h] ${k.box.join(",")} → ${o.box.join(",")}`);
     });
-    f1.headers.forEach((k, i) => { const o = f2.headers[i]; if (!o || Math.max(...k.box.map((v, j) => Math.abs(v - o.box[j]))) > 2) changes.push(`header ${k.path} changed after resize`); });
+    fB.headers.forEach((k, i) => { const o = fA.headers[i]; if (!o || Math.max(...k.box.map((v, j) => Math.abs(v - o.box[j]))) > 2) changes.push(`header ${k.path} changed after resize`); });
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "resize-before.png"), s2buf);
+    fs.writeFileSync(path.join(dir, "resize-control.png"), bufB1);
     fs.writeFileSync(path.join(dir, "resize-mobile.png"), midBuf);
-    fs.writeFileSync(path.join(dir, "resize-after.png"), s3buf);
+    fs.writeFileSync(path.join(dir, "resize-after.png"), bufA);
     fs.writeFileSync(path.join(dir, "resize-diff.png"), PNG.sync.write(px.diff));
     return { ratio: px.ratio, pixels: px.pixels, noisePixels: px.noisePixels, changes: changes.slice(0, 20), sequence: [dW, mW, dW] };
   } finally {
-    await page.context().close().catch(() => {});
+    await both((p) => p.context().close().catch(() => {}));
   }
 }
 
@@ -436,7 +460,7 @@ async function checkWidth(browser, url, width, { checks, center, contrastSteps, 
     await page.evaluate(findHeadersSrc);
     await page.waitForTimeout(1500); // entrance animations
     const load = await page.evaluate(atLoad, { center: checks.has("center") ? center : null });
-    await scrollThrough(page);
+    await scrollThrough(page, { eager: true });
     await page.waitForTimeout(400);
     const st = await page.evaluate(staticChecks);
     let contrast = null;
@@ -457,7 +481,7 @@ function findingsOf(route, width, r, { checks, centerTol }) {
   if (r.status >= 400) add("load", "error", `HTTP ${r.status}`, `HTTP ${r.status}`);
   if (checks.has("hscroll") && (r.hscroll.scrollWidth > r.hscroll.clientWidth + 1 || r.hscroll.pannable)) {
     const c = r.hscroll.culprits[0];
-    add("hscroll", r.hscroll.pannable ? "error" : "warn", "page", `+${r.hscroll.scrollWidth - r.hscroll.clientWidth}px${r.hscroll.pannable ? "" : " (overflow hidden, not pannable)"}${c ? ` ← ${c.path} (right ${c.right})` : ""}`);
+    add("hscroll", r.hscroll.pannable ? "error" : "warn", "page", `+${r.hscroll.scrollWidth - r.hscroll.clientWidth}px${r.hscroll.pannable ? "" : " (overflow hidden, not pannable)"}${c ? ` ← ${c.text ? `text "${c.text}" in ` : ""}${c.path} (right ${c.right})` : ""}`);
   }
   if (checks.has("header")) for (const u of r.under) add("header", u.covered ? "error" : "warn", u.path, `"${u.text}" ${u.covered ? "under" : "overlaps"} ${u.header} by ${u.overlap}px`);
   if (checks.has("overflow")) for (const o of r.overflow) add("overflow", "error", o.path, `${o.kind} ${o.beyond}px (box ${o.height}px${o.fixed ? `, content ${o.contentHeight}px` : ""}): "${o.text}"`);
@@ -473,15 +497,17 @@ function findingsOf(route, width, r, { checks, centerTol }) {
     if (r.images.oversized.length) add("images", "info", "oversized", `${r.images.oversized.length} oversized (e.g. ${r.images.oversized[0].src} ${r.images.oversized[0].natural}px for ${r.images.oversized[0].rendered}px)`);
   }
   if (checks.has("center") && r.centered) {
-    if (r.centered.missing) add("center", "warn", "missing", `${r.centered.selector} not found`);
+    if (r.centered.missing) add("center", "info", "missing", `${r.centered.selector} not found`);
     else if (Math.abs(r.centered.dy) > centerTol || Math.abs(r.centered.dx) > centerTol) add("center", "warn", `${r.centered.dx},${r.centered.dy}`, `${r.centered.selector} off center: dy ${r.centered.dy}px dx ${r.centered.dx}px`);
   }
   if (r.contrast) {
     const worst = new Map();
     for (const s of r.contrast) for (const it of s.items || []) { const k = it.path; if (!worst.has(k) || it.contrast < worst.get(k).contrast) worst.set(k, { ...it, y: s.y }); }
-    for (const it of worst.values()) {
-      if (it.contrast >= 3) continue;
-      add("contrast", it.contrast < 1.5 ? "error" : "warn", it.path, `header "${it.label}" ${it.contrast}:1 at scroll ${it.y}px`);
+    // One finding per route × width: the items below 3:1, worst first, and the scroll positions where it happens.
+    const low = [...worst.values()].filter((it) => it.contrast < 3).sort((a, b) => a.contrast - b.contrast);
+    if (low.length) {
+      const ys = [...new Set(r.contrast.filter((s) => (s.items || []).some((it) => it.contrast < 3)).map((s) => s.y))];
+      add("contrast", low[0].contrast < 1.5 ? "error" : "warn", "header", `${low.length} header item(s) below 3:1, worst "${low[0].label}" ${low[0].contrast}:1 (${low.slice(1, 4).map((x) => `"${x.label}" ${x.contrast}`).join(", ")}${low.length > 4 ? "…" : ""}) at scroll ${ys.join(", ")}px`);
     }
   }
   return f;

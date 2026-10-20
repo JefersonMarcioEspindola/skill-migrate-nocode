@@ -35,20 +35,23 @@ const { ROOT, config, OUT_DIR, slugOf, ensureDir, launch, arg, listArg, numListA
 
 const I18N = {
   en: { title: "Review — current site × new", heading: "Review · current × new", current: "current site", new: "new", desktop: "Desktop", mobile: "Mobile", both: "Both",
-    view: "Columns", zoom: "Zoom", pages: "Pages", generated: "Generated", live: "Live", local: "New", pagesOk: "pages matching", divergences: "divergences",
+    view: "Columns", zoom: "Zoom", pages: "Pages", pagesStat: "pages", generated: "Generated", live: "Live", local: "New", pagesOk: "pages matching", divergences: "divergences",
     avgD: "avg. pixels · desktop", avgM: "avg. pixels · mobile", noLive: "No live counterpart", notMeasured: "Not measured yet (run build-review --measure)",
     newPage: "new page · no pixel comparison", px: "pixels", div1: "divergence", divN: "divergences", ok: "matches", check: "to check", noCompare: "no comparison",
-    probe: "(non-existent URL)", open: "open full size", liveAt: "live at", truncated: "truncated" },
+    probe: "(non-existent URL)", open: "open full size", liveAt: "live at", truncated: "truncated",
+    template: "One example of {n} pages built from the same template (the others are checked with verify-dom)." },
   pt: { title: "Revisão — site atual × desenvolvido", heading: "Revisão · atual × desenvolvido", current: "site atual", new: "desenvolvido", desktop: "Desktop", mobile: "Mobile", both: "Ambos",
-    view: "Colunas", zoom: "Zoom", pages: "Páginas", generated: "Gerado em", live: "No ar", local: "Novo", pagesOk: "páginas iguais", divergences: "divergências",
+    view: "Colunas", zoom: "Zoom", pages: "Páginas", pagesStat: "páginas", generated: "Gerado em", live: "No ar", local: "Novo", pagesOk: "páginas iguais", divergences: "divergências",
     avgD: "média de pixels · desktop", avgM: "média de pixels · mobile", noLive: "Sem página correspondente no site atual", notMeasured: "Ainda não medido (rode build-review --measure)",
     newPage: "página nova · sem comparação de pixels", px: "de pixels", div1: "divergência", divN: "divergências", ok: "igual", check: "conferir", noCompare: "sem comparação",
-    probe: "(URL inexistente)", open: "abrir em tamanho real", liveAt: "no ar em", truncated: "cortada" },
+    probe: "(URL inexistente)", open: "abrir em tamanho real", liveAt: "no ar em", truncated: "cortada",
+    template: "Um exemplo de {n} páginas feitas com o mesmo modelo (as demais são conferidas com o verify-dom)." },
   es: { title: "Revisión — sitio actual × nuevo", heading: "Revisión · actual × nuevo", current: "sitio actual", new: "nuevo", desktop: "Desktop", mobile: "Móvil", both: "Ambos",
-    view: "Columnas", zoom: "Zoom", pages: "Páginas", generated: "Generado", live: "En vivo", local: "Nuevo", pagesOk: "páginas iguales", divergences: "divergencias",
+    view: "Columnas", zoom: "Zoom", pages: "Páginas", pagesStat: "páginas", generated: "Generado", live: "En vivo", local: "Nuevo", pagesOk: "páginas iguales", divergences: "divergencias",
     avgD: "promedio de píxeles · desktop", avgM: "promedio de píxeles · móvil", noLive: "Sin página equivalente en el sitio actual", notMeasured: "Aún sin medir (ejecute build-review --measure)",
     newPage: "página nueva · sin comparación de píxeles", px: "de píxeles", div1: "divergencia", divN: "divergencias", ok: "igual", check: "revisar", noCompare: "sin comparación",
-    probe: "(URL inexistente)", open: "abrir en tamaño real", liveAt: "en vivo en", truncated: "recortada" },
+    probe: "(URL inexistente)", open: "abrir en tamaño real", liveAt: "en vivo en", truncated: "recortada",
+    template: "Un ejemplo de {n} páginas hechas con la misma plantilla (las demás se verifican con verify-dom)." },
 };
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -61,7 +64,7 @@ function titleCase(s) { return s.replace(/[-_]+/g, " ").replace(/\b\p{L}/gu, (c)
 function localeCodes(c) { return (c.locales || []).map((l) => (typeof l === "string" ? l : l?.code || l?.prefix || "")).filter(Boolean); }
 
 /** Default: main pages of the default locale + one example per template + the home of every other locale + brand 404. */
-function defaultPages(c, entries) {
+function defaultPages(c, entries, t) {
   const codes = localeCodes(c);
   const defLocale = (c.defaultLocale || codes[0] || "").toLowerCase();
   const split = (route) => {
@@ -82,7 +85,8 @@ function defaultPages(c, entries) {
   for (const [group, list] of templates) {
     if (list.length === 1 && !list[0].template && !list[0].collection) { const segs = split(list[0].route).segs; pages.push({ route: list[0].route, label: titleCase(segs.join(" · ")) }); continue; }
     const ex = list[0];
-    pages.push({ route: ex.route, label: `${titleCase(String(group).replace(/[/*]+/g, " ").trim() || "Template")} (${list.length})`, note: undefined, template: group });
+    const name = titleCase(String(group).replace(/[/*]+/g, " ").trim() || "Template");
+    pages.push({ route: ex.route, label: `${name} · ${titleCase(ex.route.split("/").filter(Boolean).at(-1) || "")}`, note: t.template.replace("{n}", list.length), template: group });
   }
   // Keep manifest order (home first).
   const order = new Map(entries.map((e, i) => [e.route, i]));
@@ -91,7 +95,7 @@ function defaultPages(c, entries) {
   return pages;
 }
 
-function loadPages(c) {
+function loadPages(c, t) {
   const file = path.join(ROOT, "review.config.json");
   let list = null;
   if (fs.existsSync(file)) { const j = JSON.parse(fs.readFileSync(file, "utf8")); list = Array.isArray(j) ? j : j.pages; }
@@ -100,7 +104,7 @@ function loadPages(c) {
   try { entries = (readManifest(latestSnapshot()).routes || []).map((r) => (typeof r === "string" ? { route: r } : r)); } catch {}
   const status = new Map(entries.map((e) => [e.route, e.status]));
   const live = entries.filter((e) => (!e.status || e.status < 400) && e.route !== c.notFoundProbe);
-  if (!list) list = defaultPages(c, live.length ? live : [{ route: "/" }]);
+  if (!list) list = defaultPages(c, live.length ? live : [{ route: "/" }], t);
   const only = listArg("routes");
   if (only.length) list = list.filter((p) => only.includes(p.route));
   const seen = new Set();
@@ -218,7 +222,7 @@ ${cell(p, dW, "live")}${cell(p, dW, "local")}${cell(p, mW, "live")}${cell(p, mW,
   const date = new Date().toLocaleString(lang === "en" ? "en-GB" : lang === "pt" ? "pt-BR" : lang, { dateStyle: "medium", timeStyle: "short" });
   const stat = (v, label, cls = "") => `<div class="stat ${cls}"><b>${v}</b>${esc(label)}</div>`;
   const summary = `<section class="summary"><div class="when">${esc(t.generated)} ${esc(date)} · ${esc(t.live)} <a href="${esc(c.live)}" target="_blank" rel="noopener">${esc(c.live.replace(/^https?:\/\//, ""))}</a></div>
-<div class="stats">${stat(pages.length, t.pages)}${stat(`${okPages}/${cmp.length}`, t.pagesOk, okPages === cmp.length ? "ok" : "warn")}${stat(totalDiv, t.divergences, totalDiv ? "warn" : "ok")}${avg(dW) != null ? stat(pctS(avg(dW)), t.avgD) : ""}${avg(mW) != null ? stat(pctS(avg(mW)), t.avgM) : ""}</div></section>`;
+<div class="stats">${stat(pages.length, t.pagesStat)}${stat(`${okPages}/${cmp.length}`, t.pagesOk, okPages === cmp.length ? "ok" : "warn")}${stat(totalDiv, t.divergences, totalDiv ? "warn" : "ok")}${avg(dW) != null ? stat(pctS(avg(dW)), t.avgD) : ""}${avg(mW) != null ? stat(pctS(avg(mW)), t.avgM) : ""}</div></section>`;
   const tpl = fs.readFileSync(TEMPLATE, "utf8");
   const vals = {
     LANG: lang === "pt" ? "pt-BR" : lang, TITLE: esc(t.title), HEADING: esc(t.heading), STAMP: stamp, NAV: nav, SUMMARY: summary, HEADS: heads, ROWS: rows, DW: dW, MW: mW,
@@ -256,7 +260,7 @@ async function main() {
   const t = I18N[lang] || I18N.en;
   const cw = c.widths || [1440, 390];
   const widths = numListArg("widths", [cw.includes(1440) ? 1440 : Math.max(...cw), cw.includes(390) ? 390 : Math.min(...cw)]).slice(0, 2);
-  const pages = loadPages(c);
+  const pages = loadPages(c, t);
   const staticFile = arg("static") && arg("static") !== true ? path.resolve(String(arg("static"))) : null;
   const assetsDir = staticFile ? path.join(path.dirname(staticFile), "review-assets") : path.join(ROOT, c.publicDir || "public", "review-assets");
   const maxHeight = Number(arg("max-height", 48000));
@@ -279,11 +283,12 @@ async function main() {
         i++;
         try {
           await measure({ route: p.route, width: w, outDir: d, browser, liveRoute: p.liveRoute ?? p.route, localRoute: p.route });
-          process.stdout.write(`\rreview: measured ${i}/${todo.length}`);
+          if (process.stdout.isTTY) process.stdout.write(`\rreview: measured ${i}/${todo.length}`);
         } catch (e) { console.log(`\nreview: measure ${p.route} @${w} failed: ${String(e.message || e).split("\n")[0]}`); }
       }
     } finally { await browser.close(); }
-    process.stdout.write("\n");
+    if (process.stdout.isTTY) process.stdout.write("\n");
+    console.log(`review: measured ${todo.length} page × width`);
   }
 
   // Convert captures.
@@ -305,9 +310,11 @@ async function main() {
       shots[p.id][w] = s;
     }
   }
-  // Remove stale assets from earlier builds.
-  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
-  for (const f of walk(assetsDir)) if (!produced.has(path.resolve(f)) && f.endsWith(".webp")) fs.rmSync(f);
+  // Remove stale assets of earlier builds (only on full builds: a --routes build covers part of the pages).
+  if (!listArg("routes").length) {
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    for (const f of walk(assetsDir)) if (!produced.has(path.resolve(f)) && f.endsWith(".webp")) fs.rmSync(f);
+  }
 
   const stamp = crypto.randomBytes(6).toString("hex");
   const build = (assetUrl) => buildHtml({ pages, shots, t, lang, widths, c, assetUrl, stamp });
@@ -336,7 +343,7 @@ async function main() {
     if (arg("open")) {
       const st = await serverHasBuild(target, stamp);
       if (st !== "fresh" && st !== "auth") {
-        console.log(`review: ${target} ${st === "stale" ? "serves an older build (rebuild/restart the production server)" : "is not reachable"}; opening ${path.relative(ROOT, fallback)}`);
+        console.log(`review: ${target} ${st === "stale" ? "serves an older build (rebuild/restart the production server)" : "is not reachable (server down or no /review route)"}; opening ${path.relative(ROOT, fallback)}`);
         target = fallback;
       }
     }

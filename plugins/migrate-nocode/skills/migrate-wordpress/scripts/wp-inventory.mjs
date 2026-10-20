@@ -114,7 +114,17 @@ if (args.dump) {
   if (!fs.existsSync(file)) die(`dump not found: ${file}`);
   if (/\.gz$/i.test(file)) die("gzip'ed dump: decompress it first (gunzip -k file.sql.gz)");
   const t0 = Date.now();
-  const m = await loadDump(file, { prefix: typeof args.prefix === "string" ? args.prefix : undefined, collectMetaStats: true, keepContent: (t) => !["revision"].includes(t) });
+  // Post bodies are not kept in memory: shortcodes and builder markers are counted while streaming.
+  const scByTable = new Map();
+  const contentBuilders = new Map();
+  const onPostRow = (t, row) => {
+    if (!row.post_content || row.post_type === "revision" || INTERNAL_TYPES.test(row.post_type)) return;
+    let sc = scByTable.get(t);
+    if (!sc) scByTable.set(t, (sc = new Map()));
+    if (row.post_content.includes("[")) for (const [n, c] of findShortcodes(row.post_content)) sc.set(n, (sc.get(n) || 0) + c);
+    for (const [name, re] of [["divi", /\[et_pb_section/], ["wpbakery", /\[vc_row/], ["gutenberg", /<!--\s*wp:/]]) if (re.test(row.post_content)) contentBuilders.set(`${t}|${name}`, (contentBuilders.get(`${t}|${name}`) || 0) + 1);
+  };
+  const m = await loadDump(file, { prefix: typeof args.prefix === "string" ? args.prefix : undefined, collectMetaStats: true, keepContent: (t) => t === "wp_block", onPostRow });
   const posts = [...m.posts.values()];
   const byType = {};
   for (const p of posts) { const t = (byType[p.post_type] ||= { total: 0, byStatus: {} }); t.total++; t.byStatus[p.post_status] = (t.byStatus[p.post_status] || 0) + 1; }
@@ -133,8 +143,8 @@ if (args.dump) {
   const builders = Object.fromEntries([...m.metaPostIds].map(([k, s]) => [k, s.size]));
   const elementorByType = {};
   for (const id of m.metaPostIds.get("_elementor_data") || []) { const t = m.posts.get(id)?.post_type || "?"; elementorByType[t] = (elementorByType[t] || 0) + 1; }
-  const shortcodes = new Map();
-  for (const p of posts) if (p.post_content && !INTERNAL_TYPES.test(p.post_type) && p.post_type !== "revision") for (const [n, c] of findShortcodes(p.post_content)) shortcodes.set(n, (shortcodes.get(n) || 0) + c);
+  const shortcodes = scByTable.get(`${m.prefix}posts`) || new Map();
+  const editors = Object.fromEntries([...contentBuilders].filter(([k]) => k.startsWith(`${m.prefix}posts|`)).map(([k, n]) => [k.split("|")[1], n]));
   const contentTypes = Object.keys(byType).filter((t) => !INTERNAL_TYPES.test(t) && !["attachment", "revision", "nav_menu_item", "custom_css", "customize_changeset", "oembed_cache", "user_request"].includes(t) && !OUT_OF_SCOPE_TYPES.has(t));
   const D = {
     file: path.basename(file), mb: +(fs.statSync(file).size / 1e6).toFixed(1), seconds: +((Date.now() - t0) / 1000).toFixed(1),
@@ -148,7 +158,7 @@ if (args.dump) {
     taxonomies: Object.fromEntries(Object.entries(taxCounts).map(([t, n]) => [t, { terms: n, registeredBy: regTax.get(t)?.source, skipped: SKIP_TAXONOMIES.has(t) || undefined }])),
     acf: { version: m.options.acf_version, groups: groups.map((g) => ({ key: g.key, title: g.title, active: g.active, source: g.source, locations: [...acfLocationTypes(g)], showInRest: g.showInRest, fields: g.fields.map(function f(x) { return { name: x.name, key: x.key, type: x.type, ...(x.sub_fields.length ? { sub_fields: x.sub_fields.map(f) } : {}), ...(x.layouts.length ? { layouts: x.layouts.map((l) => ({ name: l.name, sub_fields: l.sub_fields.map(f) })) } : {}) }; }) })), typeCounts: acfTypeCounts(groups), referencedKeysWithoutDefinition: [...m.acfRefs.keys()].filter((k) => !JSON.stringify(groups).includes(`"${k}"`)).length },
     jetEngine: { metaBoxes: boxes.map((b) => ({ name: b.name, objectType: b.objectType, postTypes: b.postTypes, source: b.source, fields: b.fields.filter((f) => (f.object_type || "field") === "field").map((f) => ({ name: f.name, type: f.type, ...(f["repeater-fields"] ? { sub: f["repeater-fields"].map((s) => `${s.name}:${s.type}`) } : {}) })) })), relations: rels.map((r) => ({ id: r.id, name: r.name, parent: `${r.parent.kind}::${r.parent.type}`, child: `${r.child.kind}::${r.child.type}`, type: r.type, table: r.table, rows: r.rows.length })), cctTables: [...m.tables.keys()].filter((t) => t.startsWith(`${m.prefix}jet_cct_`)) },
-    pageBuilders: { metaPosts: builders, elementorByType, elementorTemplates: byType.elementor_library?.total || 0 },
+    pageBuilders: { metaPosts: builders, contentMarkers: editors, elementorByType, elementorTemplates: byType.elementor_library?.total || 0 },
     seo,
     menus: { menus: taxCounts.nav_menu || 0, items: byType.nav_menu_item?.total || 0 },
     woocommerce: { products: byType.product?.total || 0, variations: byType.product_variation?.total || 0, orders: (byType.shop_order?.total || 0) + (m.tables.get(`${m.prefix}wc_orders`)?.rows || 0), note: "out of scope (counts only; orders are personal data)" },
@@ -168,7 +178,7 @@ if (args.dump) {
   md.push("### ACF", "", `Version ${D.acf.version || "?"}; ${D.acf.groups.length} field groups; field types: ${Object.entries(D.acf.typeCounts).map(([t, n]) => `${t}×${n}`).join(", ") || "none"}${D.acf.referencedKeysWithoutDefinition ? `; **${D.acf.referencedKeysWithoutDefinition} field keys used in postmeta have no definition in the DB** (groups registered in PHP or acf-json: pass --acf-json)` : ""}`, "");
   for (const g of D.acf.groups) md.push(`- **${g.title}** (${g.key}, ${g.source}${g.active ? "" : ", inactive"}) → ${g.locations.join(", ") || "location not by post type"}${g.showInRest ? ", show_in_rest" : ""}: ${g.fields.map(function s(f) { return `${f.name}:${f.type}${f.sub_fields ? `[${f.sub_fields.map(s).join(", ")}]` : ""}${f.layouts ? `{${f.layouts.map((l) => `${l.name}: ${l.sub_fields.map(s).join(", ")}`).join(" | ")}}` : ""}`; }).join(", ")}`);
   md.push("", "### JetEngine", "", ...(D.jetEngine.metaBoxes.length ? D.jetEngine.metaBoxes.map((b) => `- Meta box **${b.name}** (${b.objectType} → ${b.postTypes.join(", ")}): ${b.fields.map((f) => `${f.name}:${f.type}${f.sub ? `[${f.sub.join(", ")}]` : ""}`).join(", ")}`) : ["- no meta boxes"]), ...D.jetEngine.relations.map((r) => `- Relation **${r.name}** #${r.id}: ${r.parent} → ${r.child} (${r.type}, ${r.table}, ${r.rows} rows)`), ...(D.jetEngine.cctTables.length ? [`- Custom Content Type tables: ${D.jetEngine.cctTables.join(", ")} (not exported: export them as CSV from JetEngine)`] : []), "");
-  md.push("### Page builders, SEO, menus, other", "", `- Builder data: ${JSON.stringify(D.pageBuilders.metaPosts)}; Elementor by type: ${JSON.stringify(D.pageBuilders.elementorByType)}; Elementor templates: ${D.pageBuilders.elementorTemplates}. Builder JSON is noted, not converted (rebuild those pages as components).`, `- SEO meta rows: Yoast ${seo.yoast}, Rank Math ${seo.rankMath}, SEOPress ${seo.seopress}${seo.aioseoTable ? ", AIOSEO table present" : ""}`, `- Menus: ${D.menus.menus} menus, ${D.menus.items} items`, `- WooCommerce: ${D.woocommerce.products} products, ${D.woocommerce.orders} orders (${D.woocommerce.note})`, `- Multilingual: ${D.multilingual.plugin ? `${D.multilingual.plugin}, default ${D.multilingual.defaultLang}, languages ${D.multilingual.languages.join(", ")}` : "none"}`, `- Redirection plugin rules: ${D.redirectionPlugin}; comments: ${D.comments} (not exported); users: ${D.users} (only display names/slugs are ever exported)`, `- Shortcodes in content: ${Object.entries(D.shortcodes).map(([n, c]) => `[${n}]×${c}`).join(", ") || "none"}`, `- Top meta keys: ${Object.entries(D.topMetaKeys).slice(0, 25).map(([k, n]) => `${k}:${n}`).join(", ")}`, "");
+  md.push("### Page builders, SEO, menus, other", "", `- Builder data: ${JSON.stringify(D.pageBuilders.metaPosts)}; posts by editor markup: ${JSON.stringify(D.pageBuilders.contentMarkers)}; Elementor by type: ${JSON.stringify(D.pageBuilders.elementorByType)}; Elementor templates: ${D.pageBuilders.elementorTemplates}. Builder JSON is noted, not converted (rebuild those pages as components).`, `- SEO meta rows: Yoast ${seo.yoast}, Rank Math ${seo.rankMath}, SEOPress ${seo.seopress}${seo.aioseoTable ? ", AIOSEO table present" : ""}`, `- Menus: ${D.menus.menus} menus, ${D.menus.items} items`, `- WooCommerce: ${D.woocommerce.products} products, ${D.woocommerce.orders} orders (${D.woocommerce.note})`, `- Multilingual: ${D.multilingual.plugin ? `${D.multilingual.plugin}, default ${D.multilingual.defaultLang}, languages ${D.multilingual.languages.join(", ")}` : "none"}`, `- Redirection plugin rules: ${D.redirectionPlugin}; comments: ${D.comments} (not exported); users: ${D.users} (only display names/slugs are ever exported)`, `- Shortcodes in content: ${Object.entries(D.shortcodes).map(([n, c]) => `[${n}]×${c}`).join(", ") || "none"}`, `- Top meta keys: ${Object.entries(D.topMetaKeys).slice(0, 25).map(([k, n]) => `${k}:${n}`).join(", ")}`, "");
   lines.push(`dump: prefix ${D.prefix}, ${posts.length} posts rows; content types: ${contentTypes.map((t) => `${t}(${byType[t].total})`).join(", ")}; ACF groups ${groups.length}; Jet boxes ${boxes.length}; builders ${JSON.stringify(D.pageBuilders.metaPosts)}; ${D.multilingual.plugin || "monolingual"}`);
 }
 
@@ -180,13 +190,13 @@ if (args.url || args.fromRaw) {
   try { disc = await src.discover(); } catch (e) { die(e.message); }
   const R = { site: src.site, apiRoot: src.apiRoot === "rest_route" ? "?rest_route=" : "/wp-json", root: disc.root, plugins: pluginsFromNamespaces(disc.root?.namespaces), types: [], taxonomies: [] };
   for (const t of disc.types) {
-    if (!t.rest_base) continue;
+    if (!t.rest_base || /[(?]/.test(t.rest_base)) continue; // skip regex/nested routes
     const r = await src.get(`/${t.rest_namespace || "wp/v2"}/${t.rest_base}`, { per_page: 1 });
     const sample = Array.isArray(r.body) ? r.body[0] : null;
     R.types.push({ slug: t.slug, name: t.name, restBase: t.rest_base, hierarchical: t.hierarchical, taxonomies: t.taxonomies, total: r.total ?? (Array.isArray(r.body) ? r.body.length : null), status: r.status, exposes: sample ? { acf: sample.acf && !Array.isArray(sample.acf) ? Object.keys(sample.acf).length : sample.acf ? 0 : undefined, meta: sample.meta && !Array.isArray(sample.meta) ? Object.keys(sample.meta) : undefined, yoast: !!sample.yoast_head_json || undefined, rankMath: !!sample.rank_math_head || undefined, lang: sample.lang ?? undefined, contentRawAvailable: !!sample.content?.raw || undefined, elementor: /elementor/.test(sample.content?.rendered || "") || undefined } : undefined });
   }
   for (const t of disc.taxonomies) {
-    if (!t.rest_base) continue;
+    if (!t.rest_base || /[(?]/.test(t.rest_base)) continue;
     const r = await src.get(`/${t.rest_namespace || "wp/v2"}/${t.rest_base}`, { per_page: 1 });
     R.taxonomies.push({ slug: t.slug, name: t.name, restBase: t.rest_base, types: t.types, total: r.total ?? null, status: r.status });
   }

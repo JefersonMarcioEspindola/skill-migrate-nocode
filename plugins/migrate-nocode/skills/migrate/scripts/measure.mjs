@@ -60,7 +60,7 @@ export async function extract(page, { extraProps = [], scope = null, includeHidd
       } else continue;
       const style = {};
       for (const p of props) style[p] = COLOR_PROPS.has(p) ? rgba(cs[p]) : COLORISH.has(p) ? normColors(cs[p]) : cs[p];
-      out.push({ kind, key, tag, x: Math.round((r.left + sx) * 10) / 10, y: Math.round((r.top + sy) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, op: effOpacity(el), style });
+      out.push({ i: out.length, kind, key, tag, x: Math.round((r.left + sx) * 10) / 10, y: Math.round((r.top + sy) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, op: effOpacity(el), style });
     }
     return {
       docHeight: document.documentElement.scrollHeight,
@@ -77,17 +77,36 @@ export async function extract(page, { extraProps = [], scope = null, includeHidd
   }, { props: [...new Set([...extraProps, ...BASE_PROPS])], scope, includeHidden, boxes, dynamic, idAttribute });
 }
 
-/** Pairs texts/controls by key (n-th occurrence) and media by order. */
+/**
+ * Pairs texts/controls by key (n-th occurrence) and media by order.
+ * Duplicated keys (tabs, carousels, cloned slides) are paired visible-with-visible first, then hidden-with-hidden
+ * (effective opacity 0), then whatever is left in document order: a carousel that reorders its hidden copies in the
+ * DOM must not produce "opacity 1→0 / 0→1" swaps.
+ */
 export function pair(live, local) {
   const pairs = [], onlyLive = [], onlyLocal = [];
+  const group = (list) => { const m = new Map(); for (const e of list) { if (!m.has(e.key)) m.set(e.key, []); m.get(e.key).push(e); } return m; };
+  const shown = (e) => e.op > 0.01;
   for (const kind of ["text", "control"]) {
-    const bucket = new Map();
-    for (const e of local.filter((e) => e.kind === kind)) { if (!bucket.has(e.key)) bucket.set(e.key, []); bucket.get(e.key).push(e); }
-    for (const e of live.filter((e) => e.kind === kind)) {
-      const b = bucket.get(e.key);
-      if (b?.length) pairs.push([e, b.shift()]); else onlyLive.push(e);
+    const L = group(live.filter((e) => e.kind === kind)), C = group(local.filter((e) => e.kind === kind));
+    for (const [key, ls] of L) {
+      const cs = C.get(key) || [];
+      C.delete(key);
+      if (ls.length === 1 && cs.length === 1) { pairs.push([ls[0], cs[0]]); continue; }
+      const restL = [], restC = [];
+      for (const vis of [true, false]) {
+        const a = ls.filter((e) => shown(e) === vis), b = cs.filter((e) => shown(e) === vis);
+        const n = Math.min(a.length, b.length);
+        for (let i = 0; i < n; i++) pairs.push([a[i], b[i]]);
+        restL.push(...a.slice(n)); restC.push(...b.slice(n));
+      }
+      const byDoc = (x, y) => x.i - y.i;
+      restL.sort(byDoc); restC.sort(byDoc);
+      const n = Math.min(restL.length, restC.length);
+      for (let i = 0; i < n; i++) pairs.push([restL[i], restC[i]]);
+      onlyLive.push(...restL.slice(n)); onlyLocal.push(...restC.slice(n));
     }
-    for (const b of bucket.values()) onlyLocal.push(...b);
+    for (const cs of C.values()) onlyLocal.push(...cs);
   }
   const lm = live.filter((e) => e.kind === "media"), cm = local.filter((e) => e.kind === "media");
   for (let i = 0; i < Math.max(lm.length, cm.length); i++) {

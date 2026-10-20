@@ -46,7 +46,9 @@ Image variants generated on demand (`scale-down-to`), CMS-driven lists, A/B vari
 badge on free plans (record, don't copy).
 
 ## CMS content (stage 2)
-Framer CMS collections can be exported to CSV from the CMS panel. Normalize with
-`node tools/migrate/platform/framer-csv-import.mjs exports/*.csv --out content/`. Other options (plugins/APIs,
+Framer CMS collections can be exported to CSV from the CMS panel (or the CMS Export plugin). Normalize with
+`node tools/migrate/platform/framer-csv-import.mjs exports/*.csv --out content/`. With API access,
+`framer-api-dump.mjs` (needs the optional `framer-api` package and a key in `.env.local`) dumps collections and
+`framer-csv-import.mjs --api-json` normalizes them. Other options (plugins/APIs,
 scraping the published CMS detail pages from the sitemap) are in [references/content.md](references/content.md).
 Then follow the `migrate-content` skill.

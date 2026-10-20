@@ -34,6 +34,13 @@ node tools/migrate/content/content-validate.mjs content/ --check-assets
 ```
 
 Read `_report.md`: unknown field types, shortcodes, page-builder data, broken references. Resolve or record each.
+Add `content/_raw/` to `.gitignore`: exporters cache raw API responses there for offline replays, and raw data can
+hold personal information. Big collections (> 2000 items) are split into `itemFiles`; the validator and importers
+follow them.
+
+Backups and dumps carry secrets (API keys in builder settings, SMTP passwords, password hashes, form submissions with
+personal data). The exporters refuse secret-looking fields and never print values. If an inventory reports a populated
+secret (e.g. an AI provider key in a Ycode backup's settings), tell the user so the owner can revoke it.
 
 ## 3. Model and import
 - Map each normalized collection to the target: [references/content-to-payload.md](references/content-to-payload.md)

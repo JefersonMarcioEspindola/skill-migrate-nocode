@@ -44,7 +44,13 @@ required; the platform preset fills the rest.
 | `staticFlag` | `window[staticFlag] = true` is set on the LOCAL side during measurement so motion you ADDED (polish layer, parallax) can switch itself off and the rest state compares with live. |
 | `outDir` | Where measurements go. Env `MIGRATE_OUT` overrides it, so parallel agents use separate folders. |
 | `mirrorPrefix` | Public path of mirrored assets: `https://cdn.x.com/a/b.png?w=8` → `/_m/cdn.x.com/a/b__<hash>.png`. |
-| `review` | Pages shown on `/review` (default: main pages + one example per template). |
+| `review` | Pages shown on `/review` (default: main pages + one example per template + the home of each other locale + the 404). Per page: `route`, `label`, `note`, `liveRoute` (`null` = no live counterpart, e.g. `/privacy`), `compare: false` (show without %, e.g. a brand 404). |
+| `defaultLocale` | Locale of unprefixed routes (used by `texts.mjs` language checks and the review page). |
+| `reviewLang` | Language of the review page UI: `en`, `pt` or `es`. |
+| `locales` | Locale prefixes found on live (e.g. `["en", "pt-br"]`). Drives `tojsx --i18n` and the language checks. |
+| `i18n` | `{ "configModule": "@/lib/i18n/config", "pathsModule": "@/lib/i18n/paths" }`: where `tojsx --i18n` imports `localizePath` from. |
+| `snapshot` | Pin a snapshot folder instead of the latest (env `MIGRATE_SNAPSHOT` also works). Useful when comparing an old snapshot. |
+| `userAgent`, `browserLocale` | Override the headless browser's user agent and `Accept-Language` (some sites redirect by language). |
 
 Presets (`lib/common.mjs`):
 

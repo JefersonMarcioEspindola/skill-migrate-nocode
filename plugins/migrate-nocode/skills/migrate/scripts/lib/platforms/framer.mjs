@@ -56,7 +56,8 @@ export function facts(rawHtml, renderedHtml, ctx) {
   // Images and fonts.
   const imageHosts = {};
   for (const m of rawHtml.matchAll(/https?:\/\/([a-z0-9.-]+)\/images\/[^"'\s)&]+/gi)) imageHosts[m[1]] = (imageHosts[m[1]] || 0) + 1;
-  const fonts = fontFaces(ssrCss + "\n" + ctx.stylesheets.map((s) => s.body).join("\n"), ctx.url);
+  // Framer puts @font-face rules in their own inline <style> (not in the SSR CSS).
+  const fonts = fontFaces(styles.map(textOf).join("\n") + "\n" + ctx.stylesheets.map((s) => s.body).join("\n"), ctx.url);
   const fontHosts = {};
   for (const f of fonts) for (const s of f.src) if (s.url) { const h = new URL(s.url).host; fontHosts[h] = (fontHosts[h] || 0) + 1; }
 
@@ -92,7 +93,8 @@ export function facts(rawHtml, renderedHtml, ctx) {
     components,
     imageHosts,
     scaleDownVariants: (rawHtml.match(/scale-down-to=/g) || []).length,
-    fonts: fonts.map((f) => ({ family: f.family, weight: f.weight, style: f.style, urls: f.src.filter((s) => s.url).length })),
+    fontFamilies: [...new Set(fonts.map((f) => f.family))],
+    fontFaces: fonts.length,
     fontHosts,
     modules: ctx.scripts.map((s) => s.url).filter((u) => /framerusercontent\.com\/sites\//.test(u)),
   };

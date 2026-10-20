@@ -437,8 +437,12 @@ function buildFacts(cap, platform, extras) {
   const assets = assetsOf(cap, rawDoc, sheets, inlineStyles, faces);
 
   // Sections: from the raw HTML (what tojsx converts by default), plus geometry from the rendered DOM.
-  let root = null;
-  try { root = querySelector(rawDoc, c.rootSelector); } catch (e) { warnings.push(`rootSelector: ${e.message}`); }
+  // Falls back to the rendered DOM when the raw HTML is a client-rendered shell (e.g. a Next.js error page).
+  let root = null, sectionsSource = "raw";
+  try {
+    root = querySelector(rawDoc, c.rootSelector);
+    if (!root && cap.dom.rootFound) { root = querySelector(parseHtml(cap.rendered), c.rootSelector); sectionsSource = "rendered"; }
+  } catch (e) { warnings.push(`rootSelector: ${e.message}`); }
   const sections = root ? sectionNodes(root).map((n, i) => sectionSummary(n, i, c.idAttribute)) : [];
 
   const allCss = [...sheets.map((s) => s.body), ...inlineStyles.map((s) => s.text)].join("\n");
@@ -476,7 +480,7 @@ function buildFacts(cap, platform, extras) {
     scripts,
     fonts: { faces, loaded: cap.dom.fontsLoaded, requests: cap.net.filter((r) => r.type === "font").map((r) => r.url) },
     assets: assets.list, assetKinds: assets.kinds,
-    root: { selector: c.rootSelector, idAttribute: c.idAttribute, foundInRaw: !!root, foundInRendered: cap.dom.rootFound, skipped: root ? skippedRootNodes(root).map((n) => n.tagName) : [] },
+    root: { selector: c.rootSelector, idAttribute: c.idAttribute, foundInRaw: !!root && sectionsSource === "raw", sectionsSource: root ? sectionsSource : null, foundInRendered: cap.dom.rootFound, skipped: root ? skippedRootNodes(root).map((n) => n.tagName) : [] },
     sections, sectionsRendered: cap.dom.sections,
     links: { internal: [...links].sort(), external },
     libs: libFingerprints({ urls: scripts.filter((s) => s.src).map((s) => s.src), bodies: [...cap.bodies.script.values()], globals: cap.dom.globals }),
@@ -586,7 +590,8 @@ fs.writeFileSync(mfile, JSON.stringify(manifest, null, 1));
 const non200 = results.filter((r) => r.status !== 200).map((r) => `${r.route}:${r.status}`);
 const sum = (k) => results.reduce((a, r) => a + (Number(r[k]) || 0), 0);
 console.log(`snapshot ${date} ${platform}${detected && detected !== platform ? ` (detected ${detected})` : ""}: ${results.length} route(s)${discovery ? ` of ${discovery.total + 1} discovered` : ""}, non-200: ${non200.join(", ") || "none"}, sections ${sum("sections")}, assets ${sum("assets")} (sum), stylesheets ${new Set([...written].filter((f) => f.includes(`${path.sep}css${path.sep}`) && !f.includes(`${path.sep}inline${path.sep}`))).size}`);
-if (home?.platform) console.log(`  home: ${home.platform}`);
+const shown = results.find((r) => r.route === "/") || results.find((r) => r.platform);
+if (shown?.platform) console.log(`  ${shown.route === "/" ? "home" : shown.route}: ${shown.platform}`);
 if (blocked.length) console.log(`  BLOCKED by bot protection on ${blocked.join(", ")}: not bypassed; ask the site owner to allowlist or export manually`);
 for (const w of warnings.slice(0, 5)) console.log(`  warning: ${w}`);
 console.log(`  -> ${path.relative(process.cwd(), dir)}/ (manifest.json, facts/, html/, raw/, css/)`);

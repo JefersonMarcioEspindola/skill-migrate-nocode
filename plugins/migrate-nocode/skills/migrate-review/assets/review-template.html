@@ -103,8 +103,10 @@ main{position:fixed;top:var(--bar-h);left:0;right:0;bottom:0;overflow:auto;overs
   const go = (id, smooth) => {
     const t = document.getElementById(id);
     if (!t) return;
-    const head = document.querySelector(".head");
-    scroller.scrollTo({ top: t.offsetTop - (head ? head.offsetHeight : 0), behavior: smooth ? "smooth" : "auto" });
+    const head = [...document.querySelectorAll(".head")].find((h) => h.offsetHeight > 0);
+    const top = t.offsetTop - (head ? head.offsetHeight : 0);
+    // Smooth only for short jumps: rows with tall captures can be tens of thousands of pixels apart.
+    scroller.scrollTo({ top, behavior: smooth && Math.abs(top - scroller.scrollTop) < innerHeight * 3 ? "smooth" : "auto" });
   };
   document.querySelectorAll(".nav a").forEach((a) => a.addEventListener("click", (e) => {
     e.preventDefault();

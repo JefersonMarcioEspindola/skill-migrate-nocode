@@ -76,7 +76,7 @@ reasons behind each rule: [references/method.md](references/method.md).
 ```bash
 mkdir -p tools/migrate && cp -R <this skill dir>/scripts/* tools/migrate/
 cp -R <platform skill dir>/scripts tools/migrate/platform      # if the platform skill has scripts
-cp -R <migrate-review skill dir>/scripts tools/migrate/review
+mkdir -p tools/migrate/review && cp -R <migrate-review skill dir>/scripts/* <migrate-review skill dir>/assets/review-template.html <migrate-review skill dir>/assets/review-route.ts tools/migrate/review/
 npm i -D playwright-core pixelmatch pngjs parse5 sharp && npx playwright-core install chromium
 ```
 

@@ -190,7 +190,7 @@ function parseAttrs(src) {
 /**
  * Allowlist HTML sanitizer (see content-format.md "Rich text"). Returns { html, removed } where removed counts
  * dropped tags/attrs (for the report). Not a browser-grade parser, but output is balanced and safe to render.
- * opts.baseUrl: makes relative src/href absolute (e.g. Ycode "/a/…" images). opts.onUrl(url, tag, attrs): asset hook.
+ * opts.baseUrl: makes relative src/poster absolute (e.g. Ycode "/a/…" images); hrefs stay as-is. opts.onUrl(url, tag, attrs): asset hook.
  */
 export function sanitizeHtml(input, opts = {}) {
   const html = String(input ?? "");
@@ -234,13 +234,14 @@ export function sanitizeHtml(input, opts = {}) {
       if (URL_ATTRS.has(k)) {
         let u = safeUrl(v, tag);
         if (u === null) { bump(`unsafe ${k}`); if (tag === "iframe" || tag === "img") dropElement = true; continue; }
-        if (opts.baseUrl && /^\/(?!\/)/.test(u)) u = new URL(u, opts.baseUrl).href;
+        if (opts.baseUrl && k !== "href" && /^\/(?!\/)/.test(u)) u = new URL(u, opts.baseUrl).href; // assets absolute, internal links stay relative
         if (tag === "iframe") { let host = ""; try { host = new URL(u, "https://x.invalid").host; } catch {} if (!/^https:/i.test(u) || !IFRAME_HOSTS.test(host)) { dropElement = true; bump("iframe (host not allowed)"); continue; } }
         v = u;
         if (opts.onUrl && (k === "src" || k === "poster")) opts.onUrl(u, tag, Object.fromEntries(parseAttrs(m[2] || "")));
       }
       if (k === "srcset") v = v.split(",").map((part) => { const [u0, d] = part.trim().split(/\s+/); const u = safeUrl(u0 || "", tag); return u ? (d ? `${u} ${d}` : u) : null; }).filter(Boolean).join(", ");
       if (k === "target" && v !== "_blank") continue;
+      if (v === "" && !["alt", "controls", "loop", "muted", "playsinline", "allowfullscreen", "reversed"].includes(k)) continue;
       kept.push(v === "" && ["controls", "loop", "muted", "playsinline", "allowfullscreen", "reversed"].includes(k) ? k : `${k}="${escapeAttr(decodeEntities(v))}"`);
     }
     if (dropElement) { if (!VOID.has(tag) && !raw.endsWith("/>")) { dropDepth = 1; dropTag = tag; } continue; }
@@ -252,7 +253,7 @@ export function sanitizeHtml(input, opts = {}) {
   }
   text(html.slice(last));
   while (stack.length) out.push(`</${stack.pop()}>`);
-  return { html: out.join("").replace(/<(p|span|div)>\s*<\/\1>/g, "").trim(), removed };
+  return { html: out.join("").replace(/<(p|span|div)>\s*<\/\1>/g, "").replace(/\n\s*\n(\s*\n)+/g, "\n\n").trim(), removed };
 }
 
 /** Builds the normalized rich text value. */
@@ -318,7 +319,7 @@ export function inferType(values, hint = "") {
   const isImg = (v) => v.split(/\s*[;,]\s*/).filter(Boolean).every((u) => isUrlLike(u) && /\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(u) || /framerusercontent\.com\/images\//.test(u));
   if (all(isImg)) return "image";
   if (all((v) => isUrlLike(v) && /\.(pdf|zip|docx?|xlsx?|pptx?|mp4|mov|webm|mp3|wav|csv|txt)(\?|$)/i.test(v))) return "file";
-  if (all((v) => isUrlLike(v) || /^mailto:|^tel:/i.test(v))) return "link";
+  if (all((v) => isUrlLike(v) || /^(mailto|tel):/i.test(v) || /^\/[^\s<>]*$/.test(v))) return "link";
   if (all((v) => /^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(v) || /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} \d{2} \d{4} /.test(v))) return "date";
   return "text";
 }
@@ -383,14 +384,50 @@ export async function mapLimit(items, limit, fn) {
 
 // ---------------------------------------------------------------- writer
 
+/** Streams `items` as pretty JSON (one item at a time: no giant strings). */
+function writeJsonWithItems(file, head, items) {
+  const fd = fs.openSync(file, "w");
+  try {
+    const top = JSON.stringify({ ...head, items: [] }, null, 2);
+    if (!items.length) { fs.writeSync(fd, top + "\n"); return; }
+    fs.writeSync(fd, top.slice(0, top.lastIndexOf("[]")) + "[\n");
+    items.forEach((it, i) => fs.writeSync(fd, "    " + JSON.stringify(it, null, 2).replace(/\n/g, "\n    ") + (i < items.length - 1 ? ",\n" : "\n")));
+    fs.writeSync(fd, "  ]\n}\n");
+  } finally { fs.closeSync(fd); }
+}
+
+/**
+ * Writes <collection>.json. Collections larger than chunkSize keep `items: []` and list `itemFiles`
+ * (<collection>.items-0001.json …, each { collection, part, items }) so no file is too big for JSON.parse.
+ */
+export function writeCollectionFiles(outDir, c, chunkSize = 2000) {
+  for (const f of fs.readdirSync(outDir)) if (f.startsWith(`${c.collection}.items-`) && f.endsWith(".json")) fs.unlinkSync(path.join(outDir, f));
+  const { items, ...head } = c;
+  if (!chunkSize || items.length <= chunkSize) return writeJsonWithItems(path.join(outDir, `${c.collection}.json`), head, items);
+  const files = [];
+  for (let i = 0, part = 1; i < items.length; i += chunkSize, part++) {
+    const name = `${c.collection}.items-${String(part).padStart(4, "0")}.json`;
+    files.push(name);
+    writeJsonWithItems(path.join(outDir, name), { collection: c.collection, part }, items.slice(i, i + chunkSize));
+  }
+  writeJsonWithItems(path.join(outDir, `${c.collection}.json`), { ...head, itemCount: items.length, itemFiles: files }, []);
+}
+
+/** Reads a collection file and its itemFiles (if any). */
+export function readCollection(file) {
+  const c = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (Array.isArray(c.itemFiles)) for (const f of c.itemFiles) c.items.push(...JSON.parse(fs.readFileSync(path.join(path.dirname(file), f), "utf8")).items);
+  return c;
+}
+
 /**
  * Accumulates collections, assets, redirects and warnings, then writes the content/ folder.
  *   const w = new ContentWriter({ outDir: "content", platform: "ycode", tool: "ycode-export.mjs" });
  *   w.addCollection({...}); w.asset({url,…}, {collection,item,field}); w.redirect({from,to,…}); w.warn("x", "detail"); w.write();
  */
 export class ContentWriter {
-  constructor({ outDir = "content", platform, tool, merge = true } = {}) {
-    Object.assign(this, { outDir, platform, tool, merge });
+  constructor({ outDir = "content", platform, tool, merge = true, chunkSize = 2000 } = {}) {
+    Object.assign(this, { outDir, platform, tool, merge, chunkSize });
     this.collections = [];
     this.assets = new Map();
     this.redirects = new Map();
@@ -451,7 +488,7 @@ export class ContentWriter {
 
   write({ extraReport = "" } = {}) {
     fs.mkdirSync(this.outDir, { recursive: true });
-    for (const c of this.collections) fs.writeFileSync(path.join(this.outDir, `${c.collection}.json`), JSON.stringify(c, null, 2) + "\n");
+    for (const c of this.collections) writeCollectionFiles(this.outDir, c, this.chunkSize);
 
     // assets: merge with an existing file (other runs), dedup by url/sourceId
     const assetsFile = path.join(this.outDir, "_assets.json");
@@ -514,7 +551,7 @@ export class ContentWriter {
     if (this.notes.length) L.push("", "## Notes", "", ...this.notes.map((n) => `- ${n}`));
     try {
       const mine = new Set(this.collections.map((c) => `${c.collection}.json`));
-      const others = fs.readdirSync(this.outDir).filter((f) => f.endsWith(".json") && !f.startsWith("_") && !mine.has(f));
+      const others = fs.readdirSync(this.outDir).filter((f) => f.endsWith(".json") && !f.startsWith("_") && !/\.items-\d+\.json$/.test(f) && !mine.has(f));
       if (others.length) L.push("", "## Other collection files already in this folder (from earlier runs)", "", ...others.map((f) => `- ${f}`));
     } catch {}
     return L.join("\n") + "\n";
