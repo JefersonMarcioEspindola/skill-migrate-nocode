@@ -1,0 +1,18 @@
+{
+  "name": "migrate-nocode",
+  "owner": { "name": "Jeferson Marcio Espindola", "url": "https://github.com/JefersonMarcioEspindola" },
+  "metadata": {
+    "description": "Pixel-perfect migration of live no-code sites (Ycode, Webflow, Framer, WordPress) to Next.js, measured in a headless browser.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "migrate-nocode",
+      "source": "./plugins/migrate-nocode",
+      "description": "Skills + tools to migrate Ycode, Webflow, Framer and WordPress sites to Next.js pixel-perfect: snapshot, convert, measure, review page, CMS export.",
+      "version": "1.0.0",
+      "category": "development",
+      "keywords": ["migration", "webflow", "framer", "ycode", "wordpress", "nextjs", "pixel-perfect", "playwright"]
+    }
+  ]
+}

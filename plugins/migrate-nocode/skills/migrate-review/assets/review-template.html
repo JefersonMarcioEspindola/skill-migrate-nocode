@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow, noarchive, noimageindex" />
+<meta name="review-build" content="{{STAMP}}" />
+<title>{{TITLE}}</title>
+<style>
+/* Review page of a migration: every page in sequence, current × new, desktop and mobile side by side.
+   Filled by build-review.mjs (double-brace tokens). No external dependencies. */
+:root{
+  --bg:#f4f4f2;--panel:#ffffff;--bar:#ffffff;--line:#dcdcd6;--text:#1a1a1d;--muted:#6a6a72;
+  --live:#b7791f;--new:#16855a;--warn:#c2410c;--frame:#ffffff;--shadow:0 1px 2px rgba(0,0,0,.06);
+  --bar-h:56px;--zd:.5;--zm:.9;--dw:{{DW}}px;--mw:{{MW}}px;--cols:4;color-scheme:light dark
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#1b1b1d;--panel:#26262a;--bar:#141416;--line:#3a3a40;--text:#ececf0;--muted:#9a9aa5;
+  --live:#d9a441;--new:#3fbf8a;--warn:#f0a35e;--frame:#ffffff;--shadow:none}}
+:root[data-theme=dark]{--bg:#1b1b1d;--panel:#26262a;--bar:#141416;--line:#3a3a40;--text:#ececf0;--muted:#9a9aa5;--live:#d9a441;--new:#3fbf8a;--warn:#f0a35e;--frame:#ffffff;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+a{color:inherit}
+header.bar{position:fixed;inset:0 0 auto 0;height:var(--bar-h);z-index:50;background:var(--bar);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 16px}
+.bar h1{font-size:15px;margin:0;white-space:nowrap;letter-spacing:-.01em}
+.nav{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none;padding:2px 0}.nav::-webkit-scrollbar{display:none}
+.nav a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;white-space:nowrap}
+.nav a:hover,.nav a:focus-visible{border-color:var(--muted);outline:none}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;background:var(--muted)}
+.dot.ok{background:var(--new)}.dot.warn{background:var(--warn)}.dot.live{background:var(--live)}.dot.new{background:var(--new)}
+.tools{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:12px;white-space:nowrap}
+.tools label{display:inline-flex;align-items:center;gap:6px}
+.tools input[type=range]{width:96px;accent-color:var(--new)}
+.tools select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+main{position:fixed;top:var(--bar-h);left:0;right:0;bottom:0;overflow:auto;overscroll-behavior:contain}
+.canvas{display:grid;grid-template-columns:repeat(var(--cols),max-content);column-gap:28px;padding:0 28px 96px;width:max-content;min-width:100%}
+.summary{grid-column:1/-1;position:sticky;left:28px;width:max-content;max-width:calc(100vw - 56px);padding:22px 0 6px;display:flex;flex-wrap:wrap;gap:8px 22px;align-items:baseline}
+.summary .when{color:var(--muted);font-size:12px}.summary .when a{color:var(--text)}
+.stats{display:flex;flex-wrap:wrap;gap:8px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px;box-shadow:var(--shadow);font-size:12px;color:var(--muted)}
+.stat b{display:block;font-size:17px;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.stat.ok b{color:var(--new)}.stat.warn b{color:var(--warn)}
+.heads{display:contents}
+.head{position:sticky;top:0;z-index:20;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.row-title{grid-column:1/-1;position:sticky;left:28px;width:max-content;max-width:calc(100vw - 56px);padding:34px 0 10px;display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;scroll-margin-top:52px}
+.row-title h2{margin:0;font-size:22px;letter-spacing:-.015em}
+.row-title code{color:var(--muted);font-size:12px}
+.row-title p{margin:0;color:var(--muted);font-size:12.5px;max-width:760px;flex-basis:100%}
+.badge{font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;border:1px solid currentColor}
+.badge.ok{color:var(--new)}.badge.warn{color:var(--warn)}.badge.none{color:var(--muted)}
+.cell{margin:0;align-self:start}
+.cell.d .frame,.cell.d .cap{width:calc(var(--dw)*var(--zd))}
+.cell.m .frame,.cell.m .cap{width:calc(var(--mw)*var(--zm))}
+.frame{border:1px solid var(--line);background:var(--frame);line-height:0;box-shadow:var(--shadow)}
+.frame a{display:block}.frame img{display:block;width:100%;height:auto}
+.frame.empty{display:flex;align-items:center;justify-content:center;min-height:160px;background:var(--panel);color:var(--muted);line-height:1.4;font-size:12px;text-align:center;padding:16px;border-style:dashed}
+.cap{color:var(--muted);font-size:11px;padding:6px 0 0;font-variant-numeric:tabular-nums}
+.cap b{font-weight:600;color:var(--new)}.cap b.warn{color:var(--warn)}
+[data-view=d] .m,[data-view=m] .d{display:none}
+[data-view=d],[data-view=m]{--cols:2}
+@media (max-width:820px){
+  :root{--bar-h:96px}
+  header.bar{flex-wrap:wrap;align-content:center;gap:8px 12px;padding:8px 12px}
+  .bar h1{font-size:14px;flex:1}
+  .nav{order:3;flex-basis:100%}
+  .tools{gap:10px}.tools input[type=range]{width:72px}.tools .zm{display:none}
+  .canvas{column-gap:16px;padding:0 16px 80px}
+  .summary,.row-title{left:16px;max-width:calc(100vw - 32px)}
+  .row-title h2{font-size:19px}
+}
+@media (max-width:820px){[data-view=m] .tools .zm{display:inline-flex}[data-view=m] .tools .zd{display:none}}
+</style>
+</head>
+<body data-view="all">
+<header class="bar">
+  <h1>{{HEADING}}</h1>
+  <nav class="nav" aria-label="{{T_PAGES}}">{{NAV}}</nav>
+  <div class="tools">
+    <label class="zd">{{T_DESKTOP}} <input id="zd" type="range" min="15" max="100" value="50" aria-label="{{T_ZOOM}} {{T_DESKTOP}}"></label>
+    <label class="zm">{{T_MOBILE}} <input id="zm" type="range" min="30" max="150" value="90" aria-label="{{T_ZOOM}} {{T_MOBILE}}"></label>
+    <select id="view" aria-label="{{T_VIEW}}"><option value="all">{{T_BOTH}}</option><option value="d">{{T_DESKTOP}}</option><option value="m">{{T_MOBILE}}</option></select>
+  </div>
+</header>
+<main id="scroller"><div class="canvas">
+{{SUMMARY}}
+<div class="heads">{{HEADS}}</div>
+{{ROWS}}
+</div></main>
+<script>
+(() => {
+  const root = document.documentElement, body = document.body, scroller = document.getElementById("scroller");
+  const zd = document.getElementById("zd"), zm = document.getElementById("zm"), view = document.getElementById("view");
+  const store = { get(k) { try { return localStorage.getItem("review:" + k); } catch { return null; } }, set(k, v) { try { localStorage.setItem("review:" + k, v); } catch {} } };
+  const narrow = matchMedia("(max-width: 820px)").matches;
+  const apply = () => { root.style.setProperty("--zd", zd.value / 100); root.style.setProperty("--zm", zm.value / 100); body.dataset.view = view.value; };
+  zd.value = store.get("zd") || (narrow ? 22 : 50);
+  zm.value = store.get("zm") || (narrow ? 45 : 90);
+  view.value = store.get("view") || "all";
+  apply();
+  zd.addEventListener("input", () => { apply(); store.set("zd", zd.value); });
+  zm.addEventListener("input", () => { apply(); store.set("zm", zm.value); });
+  view.addEventListener("change", () => { apply(); store.set("view", view.value); });
+  const go = (id, smooth) => {
+    const t = document.getElementById(id);
+    if (!t) return;
+    const head = document.querySelector(".head");
+    scroller.scrollTo({ top: t.offsetTop - (head ? head.offsetHeight : 0), behavior: smooth ? "smooth" : "auto" });
+  };
+  document.querySelectorAll(".nav a").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const id = decodeURIComponent(a.getAttribute("href").slice(1));
+    go(id, true);
+    history.replaceState(null, "", "#" + encodeURIComponent(id));
+  }));
+  if (location.hash) requestAnimationFrame(() => go(decodeURIComponent(location.hash.slice(1)), false));
+})();
+</script>
+</body>
+</html>
