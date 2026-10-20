@@ -55,8 +55,8 @@ Decision tree, plugins (ACF, JetEngine, CPT UI, Meta Box, Pods), SEO meta, menus
 scope (WooCommerce orders, users, comments): [references/content.md](references/content.md).
 
 ```bash
-node tools/migrate/platform/wp-inventory.mjs --folder legacy/wordpress --sql legacy/dump.sql   # or --rest https://site.com
-node tools/migrate/platform/wp-export.mjs --sql legacy/dump.sql --types post,page,project --out content/
+node tools/migrate/platform/wp-inventory.mjs --folder legacy/wordpress --dump legacy/dump.sql   # or --url https://site.com
+node tools/migrate/platform/wp-export.mjs --dump legacy/dump.sql --types post,page,project --out content/
 ```
 
 - **Install folder** copied into the project (e.g. `legacy/wordpress/`, git-ignored): themes, plugins and versions,

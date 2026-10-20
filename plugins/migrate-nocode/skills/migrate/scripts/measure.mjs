@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config, OUT_DIR, slugOf, ensureDir, launch, arg, pct } from "./lib/common.mjs";
 import {
-  preparePage, fullShot, dynamicRegions, alignBelow, screenshotDiff, newPage, ensureHelpers, isClockPastError, pixelTolerance, PREP_CSS, isMain,
+  preparePage, fullShot, dynamicRegions, alignBelow, screenshotDiff, newPage, ensureHelpers, isClockPastError, pixelTolerance, PREP_CSS, isMain, phaseSelectors,
 } from "./lib/compare.mjs";
 
 export { preparePage, fullShot, dynamicRegions, PREP_CSS };
@@ -23,9 +23,11 @@ export const BASE_PROPS = ["fontFamily", "fontSize", "fontWeight", "fontStyle", 
  *       boxes (elements without text that carry an id or config.idAttribute: kind "box", key "#id" / "[attr=v]"),
  *       dynamic (selectors excluded from pairing), idAttribute.
  */
-export async function extract(page, { extraProps = [], scope = null, includeHidden = false, boxes = false, dynamic = [], idAttribute = config().idAttribute } = {}) {
+export async function extract(page, { extraProps = [], scope = null, includeHidden = false, boxes = false, dynamic = [], idAttribute = config().idAttribute, phaseSel = phaseSelectors() } = {}) {
   await ensureHelpers(page);
-  return page.evaluate(({ props, scope, includeHidden, boxes, dynamic, idAttribute }) => {
+  return page.evaluate(({ props, scope, includeHidden, boxes, dynamic, idAttribute, phaseSel }) => {
+    let phase = phaseSel;
+    try { document.querySelector(phase); } catch { phase = ""; }
     const { rgba, normColors, effOpacity, rectsOf, gifRects } = window.__migrateCmp;
     const COLOR_PROPS = new Set(["color", "borderTopColor", "backgroundColor", "outlineColor", "textDecorationColor"]);
     const COLORISH = new Set(["boxShadow", "backgroundImage", "textShadow", "filter"]);
@@ -60,7 +62,7 @@ export async function extract(page, { extraProps = [], scope = null, includeHidd
       } else continue;
       const style = {};
       for (const p of props) style[p] = COLOR_PROPS.has(p) ? rgba(cs[p]) : COLORISH.has(p) ? normColors(cs[p]) : cs[p];
-      out.push({ i: out.length, kind, key, tag, x: Math.round((r.left + sx) * 10) / 10, y: Math.round((r.top + sy) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, op: effOpacity(el), style });
+      out.push({ i: out.length, kind, key, tag, ...(phase && el.closest(phase) ? { phase: true } : {}), x: Math.round((r.left + sx) * 10) / 10, y: Math.round((r.top + sy) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, op: effOpacity(el), style });
     }
     return {
       docHeight: document.documentElement.scrollHeight,
@@ -72,9 +74,12 @@ export async function extract(page, { extraProps = [], scope = null, includeHidd
       // Animated GIFs: the frame shown depends on load time (declared exception); masked in the pixel diff.
       gifRects: gifRects(),
       elements: out,
+      // @font-face faces that are actually loaded (a face declared but failing renders the fallback with the SAME
+      // computed font-family, so only this catches it).
+      fonts: [...document.fonts].map((f) => ({ family: f.family.replace(/["']/g, "").trim(), face: `${f.weight} ${f.style}`, status: f.status })),
       scopeFound: !!root,
     };
-  }, { props: [...new Set([...extraProps, ...BASE_PROPS])], scope, includeHidden, boxes, dynamic, idAttribute });
+  }, { props: [...new Set([...extraProps, ...BASE_PROPS])], scope, includeHidden, boxes, dynamic, idAttribute, phaseSel });
 }
 
 /**
@@ -121,7 +126,7 @@ export function pair(live, local) {
  * pair: content above that is taller on one side pushes everything down, and that is ONE divergence, not hundreds.
  * Returns [{kind, key, tag, y, localY, props: [{prop, live, local, jump?}]}].
  */
-export function diffPairs(pairs, tol = 1) {
+export function diffPairs(pairs, tol = 1, phaseSkipped = { n: 0 }) {
   const diffs = [];
   let prevDy = 0;
   for (const [a, b] of pairs) {
@@ -129,7 +134,11 @@ export function diffPairs(pairs, tol = 1) {
     const dy = b.y - a.y;
     if (Math.abs(dy - prevDy) > tol) d.push({ prop: "y", live: a.y, local: b.y, jump: Math.round((dy - prevDy) * 10) / 10 });
     prevDy = dy;
-    for (const k of ["x", "w", "h"]) if (Math.abs(a[k] - b[k]) > tol) d.push({ prop: k, live: a[k], local: b[k] });
+    // Carousel/marquee/ticker tracks: x depends on the animation phase (phase exception, counted by the caller).
+    for (const k of ["x", "w", "h"]) if (Math.abs(a[k] - b[k]) > tol) {
+      if (k === "x" && a.phase && b.phase) { phaseSkipped.n++; continue; }
+      d.push({ prop: k, live: a[k], local: b[k] });
+    }
     if (Math.abs(a.op - b.op) > 0.02) d.push({ prop: "opacity(effective)", live: a.op, local: b.op });
     for (const p of Object.keys(a.style)) if (a.style[p] !== b.style[p]) d.push({ prop: p, live: a.style[p], local: b.style[p] });
     if (d.length) diffs.push({ kind: a.kind, key: a.key, tag: a.tag, y: a.y, localY: b.y, props: d });
@@ -150,10 +159,8 @@ async function measureOnce({ route, width, liveRoute = route, localRoute = route
     await Promise.all([preparePage(pl, liveUrl, { side: "live", clock }), preparePage(pc, localUrl, { side: "local", clock, motion })]);
     const dynamic = dynamicRegions(route);
     const [L, C] = await Promise.all([extract(pl, { dynamic }), extract(pc, { dynamic })]);
-    const [sl, sc] = await Promise.all([fullShot(pl), fullShot(pc)]);
+    let [sl, sc] = await Promise.all([fullShot(pl), fullShot(pc)]);
     ensureDir(outDir);
-    fs.writeFileSync(path.join(outDir, "live.png"), sl);
-    fs.writeFileSync(path.join(outDir, "local.png"), sc);
     const exceptions = [];
     // Below a dynamic region whose height changed, the local capture is realigned by the delta before the masked %.
     const sumH = (rs) => rs.reduce((a, r) => a + r.h, 0);
@@ -161,12 +168,30 @@ async function measureOnce({ route, width, liveRoute = route, localRoute = route
     const cut = L.dynRects.length ? Math.round(Math.max(...L.dynRects.map((r) => r.y + r.h))) : 0;
     const aligned = dynDelta && cut ? alignBelow(sc, cut, dynDelta) : null;
     const masks = [...L.gifRects, ...C.gifRects, ...L.dynRects, ...C.dynRects];
-    const px = screenshotDiff(sl, sc, path.join(outDir, "diff.png"), { masks, alignedLocalPng: aligned });
+    let px = screenshotDiff(sl, sc, null, { masks, alignedLocalPng: aligned });
+    const recaptures = [];
+    // Raster flake guard: under CPU load Chromium sometimes captures beyond-viewport tiles before images/layers are
+    // painted (blank image, earlier frame). When pixels differ, capture both sides again (no reload) and keep the
+    // lowest ratio. A real difference survives every capture.
+    for (let k = 0; k < 2 && (masks.length || aligned ? px.ratioMasked : px.ratio) >= pixelTolerance(); k++) {
+      await Promise.all([pl.waitForTimeout(1000), pc.waitForTimeout(1000)]);
+      const [s2l, s2c] = await Promise.all([fullShot(pl), fullShot(pc)]);
+      const al2 = dynDelta && cut ? alignBelow(s2c, cut, dynDelta) : null;
+      const px2 = screenshotDiff(s2l, s2c, null, { masks, alignedLocalPng: al2 });
+      recaptures.push({ ratioBefore: px.ratio, ratioAfter: px2.ratio });
+      if (px2.ratioMasked < px.ratioMasked || px2.ratio < px.ratio) { px = px2; sl = s2l; sc = s2c; }
+    }
+    px.recaptures = recaptures;
+    fs.writeFileSync(path.join(outDir, "live.png"), sl);
+    fs.writeFileSync(path.join(outDir, "local.png"), sc);
+    screenshotDiff(sl, sc, path.join(outDir, "diff.png"), { masks, alignedLocalPng: dynDelta && cut ? alignBelow(sc, cut, dynDelta) : null });
     if (L.gifRects.length + C.gifRects.length) exceptions.push({ type: "gif-mask", count: L.gifRects.length + C.gifRects.length, detail: "animated GIF areas masked in ratioMasked" });
     if (L.dynRects.length + C.dynRects.length) exceptions.push({ type: "dynamic-region", selectors: dynamic, count: L.dynRects.length + C.dynRects.length, heightDelta: dynDelta, detail: "excluded from pairing, masked in ratioMasked, content below realigned" });
     const stableHeight = { live: Math.round(L.docHeight - sumH(L.dynRects)), local: Math.round(C.docHeight - sumH(C.dynRects)) };
     const { pairs, onlyLive, onlyLocal } = pair(L.elements, C.elements);
-    let elDiffs = diffPairs(pairs);
+    const phaseSkipped = { n: 0 };
+    let elDiffs = diffPairs(pairs, 1, phaseSkipped);
+    if (phaseSkipped.n) exceptions.push({ type: "phase", count: phaseSkipped.n, detail: "carousel/marquee/ticker track: x not compared" });
     // A y jump equal to the dynamic region's height delta is explained (content picked per visit), not a divergence.
     if (dynDelta) {
       elDiffs = elDiffs.filter((d) => {
@@ -177,6 +202,16 @@ async function measureOnce({ route, width, liveRoute = route, localRoute = route
     }
     const diffs = [];
     for (const d of elDiffs) for (const p of d.props) diffs.push({ key: d.key, kind: d.kind, tag: d.tag, y: d.y, prop: p.prop, live: p.live, local: p.local, ...(p.jump !== undefined ? { jump: p.jump } : {}) });
+    // Font faces loaded on live but not on local (or only on local).
+    // A face counts as loaded when any declaration of it loaded (unicode-range subsets that were never needed stay "unloaded").
+    const faces = (F) => { const m = new Map(); for (const f of F.fonts) { const k = `${f.family} ${f.face}`; if (m.get(k)?.status !== "loaded") m.set(k, f); } return m; };
+    const fl = faces(L), fc = faces(C);
+    const usedFamilies = new Set(L.elements.map((e) => String(e.style.fontFamily || "").split(",")[0].replace(/["']/g, "").trim()));
+    for (const [k, f] of fl) {
+      if (f.status !== "loaded" || !usedFamilies.has(f.family)) continue;
+      const lc = fc.get(k)?.status;
+      if (lc !== "loaded") diffs.push({ key: k, kind: "font", prop: "loaded", live: "loaded", local: lc || "not declared" });
+    }
     for (const e of onlyLive) diffs.push({ key: e.key, kind: e.kind, tag: e.tag, y: e.y, prop: "presence", live: "present", local: "missing" });
     for (const e of onlyLocal) diffs.push({ key: e.key, kind: e.kind, tag: e.tag, y: e.y, prop: "presence", live: "missing", local: "present" });
     const heightOk = L.docHeight === C.docHeight || (L.dynRects.length > 0 && stableHeight.live === stableHeight.local);

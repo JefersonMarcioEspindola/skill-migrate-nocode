@@ -101,7 +101,7 @@ Um plugin, sete skills que só carregam quando precisam:
 | **`migrate-content`** | Depois da etapa visual | Formato normalizado de conteúdo, validação, importação para Payload ou arquivos, redirects |
 | **`migrate-review`** | No fim de cada lote | Gera e abre a página `/review` lado a lado |
 
-E cerca de 20 scripts Node (snapshot, assets, tojsx, measure, sections, states, motion, texts, intent-check,
+E mais de 25 scripts Node (snapshot, assets, tojsx, measure, sections, states, motion, texts, intent-check,
 verify-dom, head-check, run-all, build-review, exportadores por plataforma) que são **copiados para o seu projeto**,
 então a migração fica reproduzível e commitada junto com o código.
 

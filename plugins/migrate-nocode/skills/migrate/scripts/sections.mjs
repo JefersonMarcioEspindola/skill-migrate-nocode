@@ -37,8 +37,14 @@ async function collect(page, { rootSelector, idAttribute, dynamic, phaseSel }) {
     const kids = (el) => [...el.children].flatMap((k) => (SKIP.has(k.tagName) ? [] : getComputedStyle(k).display === "contents" ? kids(k) : [k]));
     const shown = (k) => { const r = k.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     let secs = kids(root).filter(shown);
-    // A single wrapper holding the whole page (Webflow .page-wrapper, Framer root div): descend into it.
-    for (let d = 0; d < 6 && secs.length === 1 && kids(secs[0]).filter(shown).length > 1; d++) secs = kids(secs[0]).filter(shown);
+    // A wrapper holding (almost) the whole page (Webflow .page-wrapper, Framer root div, WordPress .wp-site-blocks)
+    // is replaced by its children; small siblings (skip links, fixed bars) stay as sections.
+    const docH = Math.max(1, document.documentElement.scrollHeight);
+    for (let d = 0; d < 6 && secs.filter((k) => k.getBoundingClientRect().height >= 40).length < 3; d++) {
+      const big = secs.findIndex((k) => k.getBoundingClientRect().height >= 0.8 * docH && kids(k).filter(shown).length > 1);
+      if (big < 0) break;
+      secs = [...secs.slice(0, big), ...kids(secs[big]).filter(shown), ...secs.slice(big + 1)];
+    }
     // Unique ids: idAttribute (or id) values that occur once on the page.
     const count = new Map();
     const idOf = (el) => (idAttribute && el.getAttribute(idAttribute)) ? `@${idAttribute}=${el.getAttribute(idAttribute)}` : el.id ? `#${el.id}` : null;
@@ -61,17 +67,33 @@ async function collect(page, { rootSelector, idAttribute, dynamic, phaseSel }) {
         const anchor = a === sec ? (uniq(sec) || `S${i}`) : uniq(a);
         return `${anchor} > ${chain.join(">")}`;
       };
+      // Subtrees not laid out by the section: position:fixed (nav, cookie bar, modal) use viewport coordinates;
+      // position:absolute whose containing block is outside the section use page coordinates.
+      const anchorCache = new Map();
+      const anchorOf = (el) => {
+        if (!el || el === sec.parentElement) return "";
+        if (anchorCache.has(el)) return anchorCache.get(el);
+        const pos = getComputedStyle(el).position;
+        let v = pos === "fixed" ? "fixed" : "";
+        if (!v && pos === "absolute" && el !== sec && (!el.offsetParent || !sec.contains(el.offsetParent))) v = "page";
+        if (!v) v = anchorOf(el.parentElement);
+        anchorCache.set(el, v); return v;
+      };
       for (const el of [sec, ...sec.querySelectorAll("*")]) {
         if (SKIP.has(el.tagName) || el.parentElement?.closest("svg")) continue;
         if (dynSel && el.closest(dynSel)) continue;
         const cs = getComputedStyle(el);
-        const r = el.getBoundingClientRect();
+        const r0 = el.getBoundingClientRect();
+        const fixed = anchorOf(el);
+        const r = fixed === "fixed" ? { left: r0.left + sr.left, top: r0.top + sr.top, width: r0.width, height: r0.height }
+          : fixed === "page" ? { left: r0.left + sx + sr.left, top: r0.top + sy + sr.top, width: r0.width, height: r0.height } : r0;
         const style = {};
         for (const p of PROPS) style[p] = COLOR.has(p) ? rgba(cs[p]) : COLORISH.has(p) ? normColors(cs[p]) : cs[p];
         elements.push({
-          key: el === sec ? sections[i].key : keyOf(el), sec: i, tag: el.tagName.toLowerCase(), phase: Boolean(phase && el.closest(phase)),
+          key: el === sec ? sections[i].key : keyOf(el), sec: i, tag: el.tagName.toLowerCase(), fixed, phase: Boolean(phase && el.closest(phase)),
           text: [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").replace(/\s+/g, " ").trim().slice(0, 40),
-          x: Math.round((r.left - sr.left) * 10) / 10, y: Math.round((r.top - sr.top) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, style,
+          ...(cs.display === "contents" || !el.getClientRects().length ? { x: 0, y: 0, w: 0, h: 0 } // no box (display none/contents)
+            : { x: Math.round((r.left - sr.left) * 10) / 10, y: Math.round((r.top - sr.top) * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 }), style,
         });
       }
     });
@@ -131,9 +153,19 @@ async function reviewOnce({ route, width, browser, outDir, rootSelector, clock =
     if (phaseSkipped) report.exceptions.push({ type: "phase", count: phaseSkipped, detail: "carousel/marquee track: x and transform not compared" });
     if (L.sections.length !== C.sections.length) report.exceptions.push({ type: "section-count", live: L.sections.length, local: C.sections.length });
     const A = PNG.sync.read(sl), B = PNG.sync.read(sc);
+    const secPx = (A, B) => perSec.map((s) => (s.local ? sectionPixels(A, B, s, s.local, L.masks, C.masks) : null));
+    let pxs = secPx(A, B);
+    // Raster flake guard (see measure.mjs): recapture once when a section differs, keep the lowest ratio per section.
+    if (pxs.some((v) => v !== null && v >= pixelTolerance())) {
+      await Promise.all([pl.waitForTimeout(1000), pc.waitForTimeout(1000)]);
+      const [s2l, s2c] = await Promise.all([fullShot(pl), fullShot(pc)]);
+      const again = secPx(PNG.sync.read(s2l), PNG.sync.read(s2c));
+      pxs = pxs.map((v, i) => (v === null ? null : Math.min(v, again[i])));
+      report.recaptured = true;
+    }
     for (const s of perSec) {
       const lc = s.local;
-      const px = lc ? sectionPixels(A, B, s, lc, L.masks, C.masks) : null;
+      const px = pxs[perSec.indexOf(s)];
       report.sections.push({ i: s.i, tag: s.tag, key: s.key, cls: s.cls, yLive: Math.round(s.y), yLocal: lc ? Math.round(lc.y) : null, hLive: Math.round(s.h), hLocal: lc ? Math.round(lc.h) : null,
         elements: s.elements, px, styleDiffs: s.diffs.length, diffs: s.diffs.slice(0, 60) });
     }

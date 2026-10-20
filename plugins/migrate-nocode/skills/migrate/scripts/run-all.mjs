@@ -1,7 +1,8 @@
 // Runs measure (and optionally sections) for every route x width and prints a SHORT summary.
 // Routes: --routes, else the latest snapshot manifest (status 200 + the 404 probe), else config.routes, else "/".
 // Usage: node tools/migrate/run-all.mjs [--routes /,/about] [--widths 1920,1440,768,390] [--concurrency 2] [--sections]
-//        [--out DIR] [--max 60]
+//        [--out DIR] [--max 60] [--no-rerun]
+// Rows that fail under concurrency are re-measured alone once (flake guard); passing reruns are marked "flaky".
 // Output dir (per run, so parallel runs never overwrite each other's summary):
 //   --out DIR, else $MIGRATE_OUT as-is, else <outDir>/runs/<timestamp>/ (path also written to <outDir>/latest-run.txt).
 // Writes <run>/<slug>/<width>/{live,local,diff}.png, report.json [, sections.json], <run>/summary.json, <run>/summary.md
@@ -43,7 +44,7 @@ if (isMain(import.meta.url)) {
   const jobs = routes.flatMap((route) => widths.map((width) => ({ route, width })));
   const browser = await launch();
   const t0 = Date.now();
-  const rows = await pool(jobs, conc, async ({ route, width }) => {
+  const job = async ({ route, width }) => {
     const outDir = ensureDir(path.join(dir, slugOf(route), String(width)));
     try {
       const r = await measure({ route, width, outDir, browser });
@@ -56,18 +57,29 @@ if (isMain(import.meta.url)) {
       }
       return row;
     } catch (e) { return { route, width, ok: false, error: e.message.split("\n")[0] }; }
-  });
+  };
+  const rows = await pool(jobs, conc, job);
+  // Flake guard: heavy pages under CPU load sometimes settle differently (real-time races in the site's own JS).
+  // Failed rows are measured again ALONE; a row that passes then is kept and marked "flaky". --no-rerun disables.
+  if (!arg("no-rerun") && conc > 1) {
+    for (const [i, r] of rows.entries()) {
+      if (r.ok) continue;
+      const again = await job(r);
+      const brief = (x) => (x.error ? { error: x.error } : { divergences: x.divergences, px: x.px, hLive: x.hLive, hLocal: x.hLocal, sections: x.sections });
+      rows[i] = { ...(again.ok ? again : r), rerun: { first: brief(r), again: brief(again) }, flaky: again.ok };
+    }
+  }
   await browser.close();
   rows.sort((a, b) => a.route.localeCompare(b.route) || b.width - a.width);
-  const summary = { at: new Date().toISOString(), live: c.live, local: c.local, seconds: Math.round((Date.now() - t0) / 1000), total: rows.length, ok: rows.filter((r) => r.ok).length, rows };
+  const summary = { at: new Date().toISOString(), live: c.live, local: c.local, seconds: Math.round((Date.now() - t0) / 1000), total: rows.length, ok: rows.filter((r) => r.ok).length, flaky: rows.filter((r) => r.flaky).length, rows };
   fs.writeFileSync(path.join(dir, "summary.json"), JSON.stringify(summary, null, 1));
   const md = [`# Measure run ${summary.at}`, "", `live ${c.live} · local ${c.local} · ok ${summary.ok}/${summary.total}`, "",
     `| route | width | height live | height local | px % | px % masked | divergences | only-live | only-local | h-scroll |${withSections ? " sections |" : ""} ok |`,
     `|---|---|---|---|---|---|---|---|---|---|${withSections ? "---|" : ""}---|`,
     ...rows.map((r) => r.error ? `| ${r.route} | ${r.width} | error: ${r.error} | | | | | | | |${withSections ? " |" : ""} no |`
-      : `| ${r.route} | ${r.width} | ${r.hLive} | ${r.hLocal} | ${pct(r.px)} | ${r.masks ? pct(r.pxMasked) : "-"} | ${r.divergences} | ${r.onlyLive} | ${r.onlyLocal} | ${r.hscroll ? "YES" : "no"} |${withSections ? ` ${r.sections.ok ? "ok" : `${r.sections.bad} bad`} |` : ""} ${r.ok ? "yes" : "no"} |`)];
+      : `| ${r.route} | ${r.width} | ${r.hLive} | ${r.hLocal} | ${pct(r.px)} | ${r.masks ? pct(r.pxMasked) : "-"} | ${r.divergences} | ${r.onlyLive} | ${r.onlyLocal} | ${r.hscroll ? "YES" : "no"} |${withSections ? ` ${r.sections.ok ? "ok" : `${r.sections.bad} bad`} |` : ""} ${r.ok ? (r.flaky ? "yes (flaky)" : "yes") : "no"} |`)];
   fs.writeFileSync(path.join(dir, "summary.md"), md.join("\n") + "\n");
-  console.log(`run-all: ${rows.length} measurements, ok ${summary.ok}, pending ${rows.length - summary.ok} (${summary.seconds}s)  ->  ${path.relative(process.cwd(), dir)}/summary.md`);
+  console.log(`run-all: ${rows.length} measurements, ok ${summary.ok}, pending ${rows.length - summary.ok}${summary.flaky ? `, flaky ${summary.flaky}` : ""} (${summary.seconds}s)  ->  ${path.relative(process.cwd(), dir)}/summary.md`);
   for (const r of rows.filter((x) => !x.ok).slice(0, Number(arg("max", 60))))
     console.log(r.error ? `  ${r.route} @${r.width} ERROR ${r.error}` : `  ${r.route} @${r.width} h ${r.hLive}/${r.hLocal} px ${pct(r.px)}${r.masks ? ` (masked ${pct(r.pxMasked)})` : ""} div ${r.divergences}${r.hscroll ? " H-SCROLL" : ""}${r.sections && !r.sections.ok ? ` sections-bad ${r.sections.bad}` : ""}`);
 }

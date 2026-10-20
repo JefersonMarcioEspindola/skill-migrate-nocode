@@ -50,6 +50,9 @@ required; the platform preset fills the rest.
 | `locales` | Locale prefixes found on live (e.g. `["en", "pt-br"]`). Drives `tojsx --i18n` and the language checks. |
 | `i18n` | `{ "configModule": "@/lib/i18n/config", "pathsModule": "@/lib/i18n/paths" }`: where `tojsx --i18n` imports `localizePath` from. |
 | `snapshot` | Pin a snapshot folder instead of the latest (env `MIGRATE_SNAPSHOT` also works). Useful when comparing an old snapshot. |
+| `pixelTolerance` | Max differing-pixel ratio for `ok` (default `0.003` = 0.3%). |
+| `seedRandom` | Seed `Math.random` identically on both sides during measurement (default `true`; sites that open a random slide otherwise produce hundreds of false divergences). |
+| `phaseSelectors` | Extra selectors of carousel/marquee/ticker tracks whose horizontal phase is ignored (speed is compared instead). |
 | `userAgent`, `browserLocale` | Override the headless browser's user agent and `Accept-Language` (some sites redirect by language). |
 
 Presets (`lib/common.mjs`):

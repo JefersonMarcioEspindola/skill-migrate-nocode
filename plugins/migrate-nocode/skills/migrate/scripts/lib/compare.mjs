@@ -26,14 +26,19 @@ export const phaseSelectors = () => [...DEFAULT_PHASE_SELECTORS, ...(config().ph
 
 /** New context + page at the given width (viewport height 900, DPR 1). bypassCSP lets us inject styles everywhere. */
 export async function newPage(browser, width, height = VIEW_H) {
-  const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, bypassCSP: true, reducedMotion: "no-preference" });
+  let c = {};
+  try { c = config(); } catch {}
+  const opts = { viewport: { width, height }, deviceScaleFactor: 1, bypassCSP: true, reducedMotion: "no-preference" };
+  if (c.userAgent) opts.userAgent = c.userAgent;
+  if (c.browserLocale) { opts.locale = c.browserLocale; opts.extraHTTPHeaders = { "accept-language": c.browserLocale }; }
+  const ctx = await browser.newContext(opts);
   return ctx.newPage();
 }
 
 /** Scrolls the window and any known smooth-scroll instance (Lenis, GSAP ScrollSmoother, Locomotive). Runs in the page. */
 export function scrollFn(y) {
   window.scrollTo(0, y);
-  for (const k of ["lenis", "__lenis", "_lenis", "lenisInstance", "_holyLenis", "smoothScroll"]) {
+  for (const k of ["lenis", "__lenis", "_lenis", "lenisInstance", "smoothScroll"]) {
     try { window[k]?.scrollTo?.(y, { immediate: true, force: true }); } catch {}
   }
   try { window.ScrollSmoother?.get?.()?.scrollTo?.(y, false); } catch {}
@@ -142,7 +147,7 @@ export async function preparePage(page, url, { side = "live", settle = 1800, clo
       await page.evaluate(scrollFn, y);
       // Let images triggered by this scroll finish loading (real time) BEFORE advancing the clock: scripts that start
       // timers on image load then start them at the same fake instant on both sides.
-      await waitImages(page, 12, false);
+      await waitImages(page, 12, false, true);
       await tick(150);
     }
     await page.evaluate(scrollFn, 1e7);
@@ -157,7 +162,7 @@ export async function preparePage(page, url, { side = "live", settle = 1800, clo
   await waitImages(page);
   // Videos: wait (real time) until the first frame is decoded, otherwise one side shows black.
   for (let i = 0; i < 20; i++) {
-    const pending = await page.evaluate(() => [...document.querySelectorAll("video")].filter((v) => v.preload !== "none" && (v.currentSrc || v.querySelector("source")) && v.readyState < 2 && !v.error && v.networkState !== 3).length);
+    const pending = await page.evaluate(() => [...document.querySelectorAll("video")].filter((v) => v.preload !== "none" && (v.currentSrc || v.querySelector("source")) && (v.readyState < 2 || v.seeking) && !v.error && v.networkState !== 3).length);
     if (!pending) break;
     await page.waitForTimeout(250);
   }
@@ -165,20 +170,47 @@ export async function preparePage(page, url, { side = "live", settle = 1800, clo
   // Force every declared @font-face to load (a cold server otherwise captures with the fallback font).
   await page.evaluate(async () => { await Promise.all([...document.fonts].map((f) => f.load().catch(() => null))); await document.fonts.ready; });
   await page.waitForTimeout(700); // CSS transitions run on real time
+  // Converge: under CPU load some scripts finish late (late chunks, network callbacks). Wait in REAL time (the fake
+  // clock stays put, so both sides keep the same fake time) until the DOM state (classes, inline styles, data/aria
+  // attributes) stops changing, then advance the clock by a FIXED amount on both sides.
+  let prev = await domSignature(page);
+  for (let i = 0; i < 8; i++) {
+    await page.waitForTimeout(300);
+    const sig = await domSignature(page);
+    if (sig === prev) break;
+    prev = sig;
+  }
+  await tick(400);
   await freezeAnimations(page);
   await ensureHelpers(page);
 }
 
+/** Cheap hash of the DOM state: element count + classes, inline styles and data-/aria- attributes. */
+export function domSignature(page) {
+  return page.evaluate(() => {
+    let h = 0;
+    const add = (str) => { for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0; };
+    const all = document.body ? document.body.getElementsByTagName("*") : [];
+    add(String(all.length));
+    for (const el of all) {
+      for (const a of el.attributes) if (a.name === "class" || a.name === "style" || a.name.startsWith("data-") || a.name.startsWith("aria-")) { add(a.name); add(a.value); }
+    }
+    return h;
+  });
+}
+
 /** Waits (real time, not the fake clock) until images really loaded: naturalWidth > 0, because img.complete is
  *  also true for FAILED images. Failed images are reloaded up to 3 times. */
-export async function waitImages(page, rounds = 60, retryBroken = true) {
+export async function waitImages(page, rounds = 60, retryBroken = true, nearViewport = false) {
   for (let i = 0; i < rounds; i++) {
-    const { pending, broken } = await page.evaluate((retry) => {
-      const imgs = [...document.images].filter((im) => im.currentSrc || im.getAttribute("src"));
+    const { pending, broken } = await page.evaluate(([retry, near]) => {
+      // near: only images around the viewport (lazy images far away legitimately stay pending)
+      const close = (im) => { if (!near) return true; const r = im.getBoundingClientRect(); return r.width > 0 && r.bottom > -innerHeight && r.top < 2 * innerHeight; };
+      const imgs = [...document.images].filter((im) => (im.currentSrc || im.getAttribute("src")) && close(im));
       const broken = imgs.filter((im) => im.complete && im.naturalWidth === 0 && !/\.svg(\?|$)/i.test(im.currentSrc || im.src) && !(im.getAttribute("src") || "").startsWith("data:"));
       if (retry) for (const im of broken) { const n = Number(im.dataset.measureRetry || 0); if (n < 3) { im.dataset.measureRetry = String(n + 1); const s = im.src; im.src = ""; im.src = s; } }
       return { pending: imgs.filter((im) => !im.complete).length, broken: broken.filter((im) => Number(im.dataset.measureRetry || 0) < 3).length };
-    }, retryBroken && i % 8 === 7);
+    }, [retryBroken && i % 8 === 7, nearViewport]);
     if (!pending && (!broken || !retryBroken)) return true;
     await page.waitForTimeout(250);
   }

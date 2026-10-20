@@ -47,12 +47,16 @@ export async function runStates({ route, width, steps, samples = [80, 1000], sco
   const c = config();
   const wait = async (page, ms) => { if (clock) await page.clock.runFor(ms); await page.waitForTimeout(ms); }; // JS on the fake clock + CSS on real time
   async function runStep(page, { op, val }) {
-    const opts = { timeout: 8000 };
+    const opts = { timeout: 3000 };
+    // First VISIBLE match (menus often have a hidden mobile copy first). Playwright's "stable" check waits for
+    // animation frames, which the paused fake clock never delivers: retry with force (no actionability checks).
+    const loc = () => page.locator(val).filter({ visible: true }).first();
+    const act = async (fn) => { try { await fn(opts); } catch { await fn({ timeout: 5000, force: true }); } };
     try {
-      if (op === "click") await page.locator(val).first().click(opts);
-      else if (op === "hover") await page.locator(val).first().hover(opts);
-      else if (op === "focus") await page.locator(val).first().focus(opts);
-      else if (op === "blur") await page.locator(val).first().blur(opts);
+      if (op === "click") await act((o) => loc().click(o));
+      else if (op === "hover") await act((o) => loc().hover(o));
+      else if (op === "focus") await loc().focus(opts);
+      else if (op === "blur") await loc().blur(opts);
       else if (op === "unhover") await page.mouse.move(1, 1);
       else if (op === "press") await page.keyboard.press(val);
       else if (op === "scroll") await page.evaluate(scrollFn, Number(val));
