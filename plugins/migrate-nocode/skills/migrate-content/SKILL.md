@@ -9,7 +9,10 @@ Runs after the visual stage, when pages already render the content as fixed JSON
 with real, editable content, keeping the same rendering (and therefore the same pixels).
 
 ## 1. Ask (once)
-- Where will content live? Payload, Sanity, Contentful, Strapi, MDX/JSON files in the repo, or WordPress headless.
+- Where will content live? Use the stack chosen at intake (`stack` in `migrate.config.json`, see the `migrate` skill's
+  `references/stack.md`): Payload + PostgreSQL by default; Sanity, Contentful, Strapi, MDX/JSON files in the repo, or
+  WordPress headless; for another stack the normalized `content/*.json` is the hand-off format and the importer is
+  written for that stack.
 - Which collections are in scope (posts, case studies, team, jobs…), and which are out (shop orders, users, comments)?
 - Locales and fallback rules.
 - Where the source is: platform skill decides (Ycode `.ycode` backup, Webflow token or CSV, Framer CSV, WordPress

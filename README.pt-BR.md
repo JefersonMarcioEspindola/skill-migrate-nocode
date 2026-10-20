@@ -43,6 +43,7 @@ horas, a página de revisão que os clientes adoraram e a etapa de CMS que vem d
 - [Instalação](#instalação)
 - [Prompt inicial](#prompt-inicial)
 - [O que acontece depois do Enter](#o-que-acontece-depois-do-enter)
+- [Escolha a sua stack](#escolha-a-sua-stack)
 - [Suporte por plataforma](#suporte-por-plataforma)
 - [A página de revisão](#a-página-de-revisão)
 - [A etapa de CMS](#a-etapa-de-cms)
@@ -155,6 +156,7 @@ Site no ar: https://www.exemplo.com.br
 Figma (opcional): <links ou "não tem">
 Backup / exportação do CMS (opcional): <caminho do .ycode, CSV ou token da API do Webflow no .env.local, CSV do Framer, pasta do WordPress ou dump .sql, ou "ainda não tenho">
 Idiomas: <ex.: só português / PT-BR + EN em /en>
+Stack: <recomendada (Next.js + Node + Payload + PostgreSQL) / outra: diga qual>
 
 Escopo agora: só o visual (layout, tipografia, imagens, motion, SEO, página de revisão). O conteúdo do CMS vem depois.
 Faça suas perguntas iniciais numa mensagem só e depois trabalhe sozinho até fechar o quadro.
@@ -184,6 +186,22 @@ acabamento, senha da revisão…) e começa. Para retomar depois de um limite de
 
 Tudo fica registrado no `docs/` do projeto (quadro, changelog, pendências por dono, decisões), então o trabalho
 sobrevive a limite de uso, compactação de contexto e troca de pessoa.
+
+## Escolha a sua stack
+
+A skill pergunta quais tecnologias você quer antes de escrever qualquer linha. A parte de medição só precisa de uma URL,
+então o destino pode ser qualquer um; a recomendação é a que já foi usada em migrações reais.
+
+| Opção | O que é |
+|---|---|
+| **A. Recomendada** | Next.js (App Router) + TypeScript, Node.js 20+, Tailwind v4, **Payload CMS**, **PostgreSQL** (Neon, Supabase ou próprio), storage de objetos para mídia |
+| **B. Next.js, outro conteúdo** | Mesma etapa visual; conteúdo em Sanity, Contentful, Strapi ou arquivos MDX/JSON |
+| **C. HTML, CSS e JS puros** | O snapshot já é HTML. Você ainda escolhe onde os dados ficam (arquivos, ou um banco como PostgreSQL ou SQLite) quando houver conteúdo ou formulário |
+| **D. Outras** | Python, PHP, Ruby, Astro, SvelteKit, Nuxt… Diga qual; a skill confere o **mínimo**: HTML nas mesmas rotas, um jeito de entregar CSS e JS, assets estáticos, servidor local em modo de produção, metadados e armazenamento de dados |
+
+As ferramentas de medição (`measure`, `sections`, `texts`, `states`, `motion`…) funcionam com qualquer stack. O
+conversor (`tojsx`, gera TSX), a rota de revisão e o importador do Payload são específicos do Next.js; em outras stacks a
+skill avisa o que falta antes de começar. Detalhes: [`stack.md`](plugins/migrate-nocode/skills/migrate/references/stack.md).
 
 ## Suporte por plataforma
 

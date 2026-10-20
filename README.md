@@ -43,6 +43,7 @@ review page clients loved, and the CMS stage that comes after.
 - [Install](#install)
 - [Starter prompt](#starter-prompt)
 - [What happens after you press Enter](#what-happens-after-you-press-enter)
+- [Choose your stack](#choose-your-stack)
 - [Platform support](#platform-support)
 - [The review page](#the-review-page)
 - [The CMS stage](#the-cms-stage)
@@ -153,6 +154,7 @@ Live site: https://www.example.com
 Figma (optional): <links or "none">
 Backup / CMS export (optional): <path to .ycode, Webflow CSV/API token in .env.local, Framer CSV, WordPress folder or .sql dump, or "none yet">
 Languages: <e.g. English only / EN + PT-BR under /pt-br>
+Stack: <recommended (Next.js + Node + Payload + PostgreSQL) / other: tell me which>
 
 Scope for now: visual only (layout, typography, images, motion, SEO, review page). CMS content comes later.
 Ask me your intake questions in one message, then work autonomously until the board is done.
@@ -182,6 +184,22 @@ review password…) and gets to work. To resume after a usage limit: **"continue
 
 Everything is tracked in the project's `docs/` (board, changelog, pending list by owner, decision records), so the
 work survives usage limits, context compaction and handoffs.
+
+## Choose your stack
+
+The skill asks which technologies you want before it writes a line. The measurement half only needs a URL, so the
+target can be anything; the recommendation is the one that has been used in real migrations.
+
+| Option | What it is |
+|---|---|
+| **A. Recommended** | Next.js (App Router) + TypeScript, Node.js 20+, Tailwind v4, **Payload CMS**, **PostgreSQL** (Neon, Supabase or self-hosted), object storage for media |
+| **B. Next.js, other content** | Same visual stage; content in Sanity, Contentful, Strapi or MDX/JSON files |
+| **C. Plain HTML, CSS and JS** | The snapshot already is HTML. You still pick where data lives (files, or a database such as PostgreSQL or SQLite) once there is content or a form |
+| **D. Other** | Python, PHP, Ruby, Astro, SvelteKit, Nuxt… Tell the skill which; it checks the **minimum**: HTML on the same routes, a way to ship CSS and JS, static assets, a production-mode local server, metadata, and data storage |
+
+The measuring tools (`measure`, `sections`, `texts`, `states`, `motion`…) work with any stack. The converter
+(`tojsx`, writes TSX), the review route and the Payload importer are Next.js-specific; on other stacks the skill tells
+you what is missing before starting. Details: [`stack.md`](plugins/migrate-nocode/skills/migrate/references/stack.md).
 
 ## Platform support
 

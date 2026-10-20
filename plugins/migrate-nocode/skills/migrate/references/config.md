@@ -45,6 +45,7 @@ required; the platform preset fills the rest.
 | `outDir` | Where measurements go. Env `MIGRATE_OUT` overrides it, so parallel agents use separate folders. |
 | `mirrorPrefix` | Public path of mirrored assets: `https://cdn.x.com/a/b.png?w=8` → `/_m/cdn.x.com/a/b__<hash>.png`. |
 | `review` | Pages shown on `/review` (default: main pages + one example per template + the home of each other locale + the 404). Per page: `route`, `label`, `note`, `liveRoute` (`null` = no live counterpart, e.g. `/privacy`), `compare: false` (show without %, e.g. a brand 404). |
+| `stack` | Informational, filled from the intake: `{ "framework": "nextjs", "language": "typescript", "css": "tailwind", "cms": "payload", "database": "postgres" }`. The tools ignore it; agents and reviewers read it. Options in [stack.md](stack.md). |
 | `defaultLocale` | Locale of unprefixed routes (used by `texts.mjs` language checks and the review page). |
 | `reviewLang` | Language of the review page UI: `en`, `pt` or `es`. |
 | `locales` | Locale prefixes found on live (e.g. `["en", "pt-br"]`). Drives `tojsx --i18n` and the language checks. |

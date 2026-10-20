@@ -1,12 +1,12 @@
 ---
 name: migrate
-description: Migrate a live website built on a no-code platform (Ycode, Webflow, Framer, WordPress/Elementor) to a coded Next.js project that looks IDENTICAL to the live site, with pixel-level measurement, a side-by-side /review page and a later CMS content stage. Use this whenever the user wants to move a site off Ycode, Webflow, Framer, WordPress, Wix-like builders or "no-code" to code, rebuild or clone a live site pixel-perfect, "sair do Webflow/Framer/Ycode/WordPress", "migrar site para código", or compare a rebuilt site against the live one, even if they don't say "migration".
+description: Migrate a live website built on a no-code platform (Ycode, Webflow, Framer, WordPress/Elementor) to a coded project (Next.js by default, other stacks supported) that looks IDENTICAL to the live site, with pixel-level measurement, a side-by-side /review page and a later CMS content stage. Use this whenever the user wants to move a site off Ycode, Webflow, Framer, WordPress, Wix-like builders or "no-code" to code, rebuild or clone a live site pixel-perfect, "sair do Webflow/Framer/Ycode/WordPress", "migrar site para código", or compare a rebuilt site against the live one, even if they don't say "migration".
 ---
 
 # Migrate a no-code site to code, pixel-perfect
 
-You are the ORCHESTRATOR of a fidelity migration. The live site is the source of truth; the goal is a Next.js
-project whose pages are indistinguishable from it at 1920, 1440, 768 and 390 px, proven by measurement, not by eye.
+You are the ORCHESTRATOR of a fidelity migration. The live site is the source of truth; the goal is a coded
+project (Next.js by default) whose pages are indistinguishable from it at 1920, 1440, 768 and 390 px, proven by measurement, not by eye.
 
 The method in one sentence: **convert, don't interpret.** Snapshot the rendered HTML of every route, convert it to
 JSX keeping the original classes and CSS, measure live vs local in a headless browser, fix until the measured
@@ -28,7 +28,10 @@ Then ask only what you can't infer, in ONE message (use the question tool if ava
 defaults and why each matters: [references/intake.md](references/intake.md). The essentials:
 
 1. Live URL (and confirm the detected platform).
-2. Project folder / repository, and whether to start from an existing template or scaffold Next.js + TypeScript.
+2. Project folder / repository, and whether to start from an existing template or scaffold a new project.
+   **Stack**: present the recommended one (Next.js + TypeScript, Node, Tailwind, Payload CMS, PostgreSQL), the
+   alternatives (Next.js with another CMS or files; plain HTML/CSS/JS plus somewhere to store data) and "Other"
+   (any language or framework, checked against a minimum contract): [references/stack.md](references/stack.md).
 3. Scope: visual only now (recommended), or visual + CMS content.
 4. Languages and how they're routed on the live site.
 5. Optional inputs: Figma links, platform backup/export (Ycode `.ycode`, Webflow API token or CSV, Framer CSV,
