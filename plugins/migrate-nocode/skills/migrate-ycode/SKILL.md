@@ -55,8 +55,10 @@ logic, with unmount cleanup. A hero pre-init that must run before hydration goes
 - The Supabase font host can time out → the measure tool serves mirrored fonts to the live side.
 - The default 404 is a bare "404 / Page not found" with an empty body in the snapshot → brand 404 if the user wants.
 
-## CMS content (stage 2)
-Source: the `.ycode` backup (Ycode → Settings → Backups → download). Inventory and export:
+## CMS structure (phase 1) and content (stage 2)
+Source: the `.ycode` backup (Ycode → Settings → Backups → download). It never drives the visual (the live HTML does),
+but the **inventory** in phase 1 shows collections, fields, dynamic pages and item counts, which is what you need to
+shape the JSON mocks and templates. The export is stage 2. Inventory and export:
 
 ```bash
 node tools/migrate/platform/ycode-backup-inventory.mjs path/to/site.ycode

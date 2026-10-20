@@ -163,7 +163,7 @@ review password…) and gets to work. To resume after a usage limit: **"continue
 | Phase | What the agent does | You get |
 |---|---|---|
 | 0. Setup | Scaffolds/opens the project, copies the tools, writes `migrate.config.json` | `tools/migrate/`, config |
-| 1. Reconnaissance | Snapshots every route, mirrors assets, audits the live site's own bugs | `snapshots/<date>/`, the board in `docs/layout-loop.md`, ONE question list |
+| 1. Reconnaissance | Snapshots every route, mirrors assets, audits the live site's own bugs, reads the CMS structure from your backup or dump (inventory only, no content) | `snapshots/<date>/`, the board in `docs/layout-loop.md`, ONE question list |
 | 2. Foundations | Fonts, base CSS, breakpoints, color variables, images, runtime libraries | Home measured; divergences drop from dozens to a few |
 | 3. Shared components | Header variants, mobile menu, footer, forms | Measured in 3 widths and every state |
 | 4. Pages | Up to 3 page agents in parallel, each owning its files | Every page at 0 divergences |

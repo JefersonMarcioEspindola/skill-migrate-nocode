@@ -93,6 +93,23 @@ node tools/migrate/assets.mjs            # mirror every asset with a stable loca
 node tools/migrate/intent-check.mjs --target live   # bugs the live site already has
 ```
 
+**If the user has a backup or dump, use it now to understand the CMS structure, not to move content.** The visual
+stage renders collections from fixed JSON, so you need the real shape before writing the templates: which collections
+exist, their fields and types, which pages are dynamic (one template per collection), which lists are randomized or
+limited, and how many items there are. Run the inventory only (it prints structure, key names and counts, never
+values):
+
+```bash
+node tools/migrate/platform/ycode-backup-inventory.mjs path/to/site.ycode     # Ycode
+node tools/migrate/platform/wp-inventory.mjs --folder legacy/wordpress --dump legacy/dump.sql   # WordPress
+```
+
+Webflow and Framer have no structure-only mode: read the collections from the snapshot (`w-dyn-list` and CMS item
+pages on Webflow, CMS detail pages in the Framer sitemap) and, if the user has a CSV export, its header row. Use the
+result to shape `lib/data/<collection>.json`, to decide which routes are template-driven, and to fill the "waits for
+the CMS stage" list. If an inventory reports a populated secret (an API key in builder settings), tell the user so the
+owner can revoke it. Content export is still stage 2 (`migrate-content`).
+
 Record the snapshot date: the live site changes during the work (clients publish, CMS blocks reshuffle, CDNs
 re-encode images). Build the board, then send the user ONE list and keep working on what doesn't depend on it:
 Figma × live differences, pages that look like template leftovers, untranslated locales, odd redirects, dead links,

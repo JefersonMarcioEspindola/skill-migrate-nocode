@@ -36,7 +36,8 @@ project, copy `assets/review-route.ts` to `app/review/route.ts` (serves the gene
 - Always `noindex` (meta + `X-Robots-Tag`), out of the sitemap, and disallowed in `robots.txt` for search engines and
   AI crawlers ([assets/robots-snippet.md](assets/robots-snippet.md)).
 - On an internal or preview domain no password is needed. If it's public, set `REVIEW_PASSWORD` and add the Basic
-  Auth check from `assets/review-auth.ts` to the proxy/middleware.
+  Auth check from `assets/review-auth.ts` to the proxy/middleware. Copy `review-auth.test.ts` next to it too: it
+  uses vitest (install it in the project, or skip the test file).
 - Remove it (or keep it protected and unlinked) before the final handoff if the client prefers.
 
 Details: [references/review-page.md](references/review-page.md).

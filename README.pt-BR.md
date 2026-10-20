@@ -165,7 +165,7 @@ acabamento, senha da revisão…) e começa. Para retomar depois de um limite de
 | Fase | O que o agente faz | O que você recebe |
 |---|---|---|
 | 0. Preparação | Cria ou abre o projeto, copia as ferramentas, escreve o `migrate.config.json` | `tools/migrate/`, configuração |
-| 1. Reconhecimento | Snapshot de todas as rotas, espelho dos assets, auditoria dos bugs do próprio site no ar | `snapshots/<data>/`, o quadro em `docs/layout-loop.md`, UMA lista de perguntas |
+| 1. Reconhecimento | Snapshot de todas as rotas, espelho dos assets, auditoria dos bugs do próprio site no ar, leitura da estrutura do CMS pelo backup ou dump (só inventário, sem conteúdo) | `snapshots/<data>/`, o quadro em `docs/layout-loop.md`, UMA lista de perguntas |
 | 2. Fundações | Fontes, CSS base, breakpoints, variáveis de cor, imagens, bibliotecas do runtime | Home medida; divergências caem de dezenas para poucas |
 | 3. Componentes compartilhados | Variantes do cabeçalho, menu mobile, rodapé, formulários | Medidos em 3 larguras e em todos os estados |
 | 4. Páginas | Até 3 agentes de página em paralelo, cada um dono dos seus arquivos | Todas as páginas com 0 divergências |
