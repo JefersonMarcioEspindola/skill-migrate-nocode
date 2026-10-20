@@ -1,4 +1,8 @@
 <p align="center">
+  <a href="README.md">🇺🇸 English</a> &nbsp;·&nbsp; <b>🇧🇷 Português</b>
+</p>
+
+<p align="center">
   <img src="docs/assets/cover.pt-BR.png" alt="migrate-nocode: leve um site do Ycode, Webflow, Framer ou WordPress para Next.js, idêntico ao pixel" width="100%">
 </p>
 
