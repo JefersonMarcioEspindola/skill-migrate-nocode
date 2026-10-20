@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="README.md"><img alt="English (current)" src="https://img.shields.io/badge/English-you%20are%20here-1D4ED8?style=for-the-badge"></a>
-  <a href="README.pt-BR.md"><img alt="Ler em Português" src="https://img.shields.io/badge/Portugu%C3%AAs%20(BR)-clique%20aqui%20para%20ler-0B2A6F?style=for-the-badge"></a>
+  <a href="README.md"><img alt="English (current)" src="docs/assets/lang-en-active.svg" width="220" height="48"></a>
+  <a href="README.pt-BR.md"><img alt="Português (BR)" src="docs/assets/lang-pt-br.svg" width="220" height="48"></a>
 </p>
 
 <p align="center">

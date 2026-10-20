@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="48" viewBox="0 0 220 48" role="img" aria-label="PT-BR · Português — clique para ler">
+<rect width="220" height="48" rx="11" fill="#00843D"/><g transform="translate(16,14)"><rect width="28" height="20" rx="2.5" fill="#009C3B"/><polygon points="14,2.2 25.6,10 14,17.8 2.4,10" fill="#FFDF00"/><circle cx="14" cy="10" r="4.4" fill="#002776"/><path d="M9.7 9.2 Q14 7.6 18.3 11" stroke="#fff" stroke-width="0.9" fill="none"/></g>
+<text x="56" y="22" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="800" fill="#fff" letter-spacing="0.2">PT-BR · Português</text>
+<text x="56" y="38" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="500" fill="#fff" fill-opacity="0.92">clique para ler →</text>
+</svg>
