@@ -95,8 +95,8 @@ Um plugin, sete skills que só carregam quando precisam:
 |---|---|---|
 | **`migrate`** | Você pede para migrar um site | Perguntas iniciais, o método em 11 fases, as ferramentas, critério de pronto, relatório final |
 | **`migrate-ycode`** | O site é Ycode | Conversão nativa em Tailwind, semântica do runtime do Ycode (interações GSAP, sliders Swiper), exportação do backup `.ycode` |
-| **`migrate-webflow`** | O site é Webflow | `webflow.css` como está, extração das interações IX2, componentes `w-*`, CMS pela Data API v2 ou CSV |
-| **`migrate-framer`** | O site é Framer | CSS do SSR como está, variantes de breakpoint, animações de entrada e de scroll com Motion, CMS por CSV |
+| **`migrate-webflow`** | O site é Webflow | `webflow.css` como base e depois Tailwind, extração das interações IX2, componentes `w-*`, CMS pela Data API v2 ou CSV |
+| **`migrate-framer`** | O site é Framer | CSS do SSR como base e depois Tailwind, variantes de breakpoint, animações de entrada e de scroll com Motion, CMS por CSV |
 | **`migrate-wordpress`** | O site é WordPress | Elementor, Divi, WPBakery, Gutenberg, plugins jQuery, conteúdo pela pasta, dump `.sql` ou REST: ACF, JetEngine, CPT UI, Yoast, Rank Math |
 | **`migrate-content`** | Depois da etapa visual | Formato normalizado de conteúdo, validação, importação para Payload ou arquivos, redirects |
 | **`migrate-review`** | No fim de cada lote | Gera e abre a página `/review` lado a lado |
@@ -170,6 +170,7 @@ acabamento, senha da revisão…) e começa. Para retomar depois de um limite de
 | 3. Componentes compartilhados | Variantes do cabeçalho, menu mobile, rodapé, formulários | Medidos em 3 larguras e em todos os estados |
 | 4. Páginas | Até 3 agentes de página em paralelo, cada um dono dos seus arquivos | Todas as páginas com 0 divergências |
 | 5. Motion | Cada gatilho, tween, easing, stagger, breakpoint | Animações amostradas iguais nos dois lados |
+| 5b. CSS → Tailwind | Só Webflow, Framer e WordPress: seção por seção, medido; um `legacy.css` pequeno e documentado para o que o Tailwind não expressa | Código em Tailwind v4, mesmos pixels |
 | 6. Acabamento (opcional) | Contraste do header, hover de linha, marquee infinito, 404 da marca, bugs do ar corrigidos | Desvios registrados |
 | 7. SEO | Head por rota, sitemap, hreflang, JSON-LD, redirects | `head-check` limpo |
 | 8. Revisão | Página lado a lado | `/review` |
@@ -184,7 +185,7 @@ sobrevive a limite de uso, compactação de contexto e troca de pessoa.
 
 | | Ycode | Webflow | Framer | WordPress |
 |---|---|---|---|---|
-| Estratégia de CSS | Classes Tailwind v4 como estão | `webflow.css` como está | CSS do SSR como está | CSS do tema, do construtor e dos plugins como está |
+| CSS | Classes Tailwind v4 como estão | `webflow.css` como base → Tailwind | CSS do SSR como base → Tailwind | CSS do tema, do construtor e dos plugins como base → Tailwind |
 | Ids estáveis para parear | `data-layer-id` | `data-w-id` + caminho no DOM | caminho no DOM | `data-id` do Elementor + caminho no DOM |
 | Animações | JSON de interações do payload RSC → GSAP | JSON do IX2 no `webflow.js` → manter ou portar | Dados de appear + Motion amostrado | `data-settings`, Animate.css, AOS/WOW/GSAP |
 | Fonte do CMS | Backup `.ycode` | Data API v2 ou CSV | Exportação CSV | Pasta, dump `.sql` ou REST · ACF · JetEngine · CPT UI |

@@ -14,9 +14,10 @@ Follow the `migrate` skill for the method; this file holds what is specific to F
 `"platform": "framer"` (root `#main`; `data-framer-name` is a hint, not unique, so section pairing falls back to
 DOM paths).
 
-## CSS strategy: keep Framer's CSS
-Framer's CSS is generated with hashed classes. **Copy the SSR `<style>` blocks verbatim** (in head order) and keep the
-class names; don't try to make them readable in this stage. Fonts: Framer serves its own font files (and Google
+## CSS strategy: baseline first, then Tailwind
+Framer's CSS is generated with hashed classes. For the baseline **copy the SSR `<style>` blocks verbatim** (in head
+order) and keep the class names. Phase 5b converts to Tailwind from computed values, section by section (hashed
+classes carry no intent, so the measured values are the source); keep Framer's breakpoint structure while converting. Fonts: Framer serves its own font files (and Google
 Fonts) — mirror them and keep the same `@font-face`.
 
 **Breakpoints are variants.** Framer renders every breakpoint variant of a component in the SSR HTML and hides the

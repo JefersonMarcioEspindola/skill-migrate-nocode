@@ -24,8 +24,10 @@ from dozens to a handful. If they don't, the cause is almost always one of these
 8. Tailwind sites (Ycode): same Tailwind major/minor as the live `<style>`; **native** breakpoints (`max-md:`,
    `max-lg:`). Redefining `screens` reverses the generated order and breaks mobile. `source(none)` + explicit
    sources so snapshots and docs don't bloat the CSS.
-9. Non-Tailwind sites (Webflow, Framer, most WordPress): **don't convert the CSS to Tailwind.** Import the
-   downloaded stylesheets (with `url()` rewritten to the mirror) and keep class names in JSX.
+9. Non-Tailwind sites (Webflow, Framer, most WordPress): bring the downloaded stylesheets in first (with `url()`
+   rewritten to the mirror, class names kept in JSX) as the measured baseline, then convert to Tailwind section by
+   section in phase 5b ([tailwind-conversion.md](tailwind-conversion.md)). Never do both in one step: when something
+   diverges you must know whether the migration or the conversion caused it.
 10. Modern `browserslist` in package.json, otherwise Lightning CSS rewrites modern colors (`color-mix`, `oklab`) to
     `lab()`. Compare RENDERED colors (the measure tool does), not computed strings.
 11. Platform variables (Ycode `--<uuid>` color vars, Webflow `--` variables, Framer tokens) declared exactly.

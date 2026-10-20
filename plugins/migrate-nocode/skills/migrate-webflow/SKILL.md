@@ -13,8 +13,10 @@ Follow the `migrate` skill for the method; this file holds what is specific to W
 from a CloudFront URL, elements with `data-w-id`, classes `w-nav`, `w-slider`, `w-tabs`, `w-dropdown`, `w-lightbox`,
 `w-form`, `w-dyn-list`. Config: `"platform": "webflow"`.
 
-## CSS strategy: keep Webflow's CSS
-Webflow doesn't use Tailwind. **Do not rewrite styles.** Import the downloaded stylesheets verbatim (`assets.mjs`
+## CSS strategy: baseline first, then Tailwind
+Webflow doesn't use Tailwind. Phases 2–5: import the downloaded stylesheets verbatim as the measured baseline. Phase 5b
+then converts to Tailwind section by section (`references/tailwind-conversion.md` in the `migrate` skill). Baseline:
+import the downloaded stylesheets verbatim (`assets.mjs`
 writes copies with `url()` pointing to the local mirror) in the same order as the live `<head>`, and keep every class
 name in JSX (combo classes included: `button is-secondary`). Webflow's normalize + base `w-*` rules are part of
 that CSS. Page-level `<style>` from custom code goes into a per-page CSS file or the component.

@@ -93,8 +93,8 @@ One plugin, seven skills that load only when needed:
 |---|---|---|
 | **`migrate`** | You ask to migrate a site | Intake questions, the 11-phase method, the tools, definition of done, final report |
 | **`migrate-ycode`** | Site is on Ycode | Tailwind-native conversion, Ycode runtime (GSAP interactions, Swiper sliders) semantics, `.ycode` backup export |
-| **`migrate-webflow`** | Site is on Webflow | `webflow.css` verbatim, IX2 interaction extraction, `w-*` components, CMS via Data API v2 or CSV |
-| **`migrate-framer`** | Site is on Framer | SSR CSS verbatim, breakpoint variants, appear/scroll animations with Motion, CMS via CSV |
+| **`migrate-webflow`** | Site is on Webflow | `webflow.css` baseline then Tailwind, IX2 interaction extraction, `w-*` components, CMS via Data API v2 or CSV |
+| **`migrate-framer`** | Site is on Framer | SSR CSS baseline then Tailwind, breakpoint variants, appear/scroll animations with Motion, CMS via CSV |
 | **`migrate-wordpress`** | Site is on WordPress | Elementor / Divi / WPBakery / Gutenberg, jQuery plugins, content from folder, `.sql` dump or REST — ACF, JetEngine, CPT UI, Yoast, Rank Math |
 | **`migrate-content`** | After the visual stage | Normalized content format, validation, import to Payload or files, redirects |
 | **`migrate-review`** | End of every batch | Builds and opens the side-by-side `/review` page |
@@ -168,6 +168,7 @@ review password…) and gets to work. To resume after a usage limit: **"continue
 | 3. Shared components | Header variants, mobile menu, footer, forms | Measured in 3 widths and every state |
 | 4. Pages | Up to 3 page agents in parallel, each owning its files | Every page at 0 divergences |
 | 5. Motion | Every trigger, tween, easing, stagger, breakpoint | Motion sampled equal on both sides |
+| 5b. CSS → Tailwind | Webflow, Framer and WordPress only: section by section, measured; a small documented `legacy.css` for what Tailwind can't express | Tailwind v4 codebase, same pixels |
 | 6. Polish (optional) | Header contrast, hover lines, infinite marquee, brand 404, live bugs fixed | Recorded deviations |
 | 7. SEO | Head per route, sitemap, hreflang, JSON-LD, redirects | `head-check` clean |
 | 8. Review | Side-by-side page | `/review` |
@@ -182,7 +183,7 @@ work survives usage limits, context compaction and handoffs.
 
 | | Ycode | Webflow | Framer | WordPress |
 |---|---|---|---|---|
-| CSS strategy | Tailwind v4 classes as-is | `webflow.css` verbatim | SSR CSS verbatim | Theme + builder + plugin CSS verbatim |
+| CSS | Tailwind v4 classes as-is | `webflow.css` as baseline → Tailwind | SSR CSS as baseline → Tailwind | Theme + builder + plugin CSS as baseline → Tailwind |
 | Stable ids for pairing | `data-layer-id` | `data-w-id` + DOM path | DOM path | Elementor `data-id` + DOM path |
 | Animations | Interactions JSON from RSC payload → GSAP | IX2 JSON from `webflow.js` → keep or port | Appear data + sampled Motion | `data-settings`, Animate.css, AOS/WOW/GSAP |
 | CMS source | `.ycode` backup | Data API v2 or CSV | CSV export | Folder, `.sql` dump or REST · ACF · JetEngine · CPT UI |

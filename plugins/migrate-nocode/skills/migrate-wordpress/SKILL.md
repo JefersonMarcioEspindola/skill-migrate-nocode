@@ -31,9 +31,10 @@ the content wrapper the theme uses (often `body`, or `#page`, `.site`, `main`; E
 - **Custom themes**: the theme's `style.css` + enqueued assets; look for AOS/WOW/GSAP/ScrollMagic.
 
 ## CSS strategy
-Copy every stylesheet the page loads, verbatim and in order (theme, builder, plugins, inline `<style>` blocks). Much of
-it is unused — that's fine for fidelity. Only after a page measures clean, optionally prune with Chrome's CSS coverage
-and **measure again**; record the decision. Breakpoints come from the theme/builder (Elementor defaults: tablet ≤ 1024,
+Baseline: copy every stylesheet the page loads, verbatim and in order (theme, builder, plugins, inline `<style>` blocks). Much of
+it is unused — that's fine for fidelity. Once a page measures clean, phase 5b converts it to Tailwind section by section
+(`tailwind-conversion.md` in the `migrate` skill); plugin and widget CSS that ships with a library stays as the library
+ships it. Use Chrome's CSS coverage to see what was never used, and **measure again** after each removal. Breakpoints come from the theme/builder (Elementor defaults: tablet ≤ 1024,
 mobile ≤ 767; custom breakpoints are in the kit settings CSS).
 
 ## JavaScript

@@ -32,7 +32,9 @@ defaults and why each matters: [references/intake.md](references/intake.md). The
 4. Languages and how they're routed on the live site.
 5. Optional inputs: Figma links, platform backup/export (Ycode `.ycode`, Webflow API token or CSV, Framer CSV,
    WordPress folder / `.sql` dump / REST), and where the CMS content should land later.
-6. Polish layer: keep 100% faithful, or apply the optional finishing layer after fidelity
+6. CSS target (non-Tailwind platforms): convert to Tailwind after the visual baseline is clean (default), or keep the
+   platform CSS ([references/tailwind-conversion.md](references/tailwind-conversion.md)). And the polish layer: keep 100%
+   faithful, or apply the optional finishing layer after fidelity ([references/polish.md](references/polish.md)).
    ([references/polish.md](references/polish.md)).
 7. Git: branch or straight to main; push/deploy only on explicit request (default).
 
@@ -64,6 +66,7 @@ reasons behind each rule: [references/method.md](references/method.md).
 | 3 | Shared components: header variants, mobile menu, footer, forms | measured in 3 widths and every state |
 | 4 | Pages in parallel (≤ 3 agents at once) | every page at 0 divergences |
 | 5 | Motion: every trigger, tween, easing, stagger, breakpoint | motion sampled equal on both sides |
+| 5b | CSS → Tailwind (Webflow, Framer, WordPress; skipped on Ycode): section by section, measured | Tailwind v4 with a small documented `legacy.css` |
 | 6 | Optional polish layer (only if the user wants it) | deviations recorded in `docs/decisions/` |
 | 7 | SEO & metadata, redirects, brand 404 | head-check clean |
 | 8 | `/review` page (skill `migrate-review`) | side-by-side page, regenerated after each batch |
@@ -120,7 +123,8 @@ typos (obvious typos: fix and record), and the visual bugs of the live site. No 
 Foundations first, measured on the Home, before any page work — the traps that cost hours are in
 [references/pitfalls.md](references/pitfalls.md) (fonts, base body styles, breakpoints, CSS order, images,
 library versions, StrictMode, inline scripts). Then shared components, then pages in parallel following
-[references/agents.md](references/agents.md), then motion.
+[references/agents.md](references/agents.md), then motion. On Webflow, Framer and WordPress, phase 5b converts the baseline CSS to Tailwind section by section
+([references/tailwind-conversion.md](references/tailwind-conversion.md)).
 
 ```bash
 node tools/migrate/tojsx.mjs --page about --list
