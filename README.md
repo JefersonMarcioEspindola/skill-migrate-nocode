@@ -91,7 +91,7 @@ One plugin, seven skills that load only when needed:
 
 | Skill | When it loads | What it brings |
 |---|---|---|
-| **`migrate`** | You ask to migrate a site | Intake questions, the 11-phase method, the tools, definition of done, final report |
+| **`migrate`** | You ask to migrate a site | Intake questions, the phase-by-phase method, the tools, definition of done, final report |
 | **`migrate-ycode`** | Site is on Ycode | Tailwind-native conversion, Ycode runtime (GSAP interactions, Swiper sliders) semantics, `.ycode` backup export |
 | **`migrate-webflow`** | Site is on Webflow | `webflow.css` baseline then Tailwind, IX2 interaction extraction, `w-*` components, CMS via Data API v2 or CSV |
 | **`migrate-framer`** | Site is on Framer | SSR CSS baseline then Tailwind, breakpoint variants, appear/scroll animations with Motion, CMS via CSV |
@@ -260,9 +260,11 @@ image and components the client redesigned but never published.
 **Does it work in other agents (Cursor, Codex…)?** The skills are plain `SKILL.md` files plus Node scripts; agents that
 support the skills format can use them. It's built and tested on Claude Code.
 
-**Will the result be "clean code"?** It will be *faithful* code: the platform's classes and CSS, componentized per
-section. Refactoring to a design system is a separate, deliberate step — doing it during the migration is exactly
-what makes sites drift.
+**Will the result be "clean code"?** It will be *faithful* code first: componentized per section, with the platform's classes (Ycode is already
+Tailwind) or its CSS as a measured baseline. On Webflow, Framer and WordPress it is then converted to Tailwind section
+by section, re-measured after each step, with a small documented `legacy.css` for what Tailwind can't express.
+Refactoring into a design system is a separate, deliberate step: doing it before there is a measured baseline is
+exactly what makes sites drift.
 
 **What about forms, e-commerce, memberships?** Forms are migrated visually (all states) and wired to a backend in the
 content stage. Shops and memberships are out of scope and get recorded as pending.

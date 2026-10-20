@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>capa migrate-nocode</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #fff;
+    background:
+      radial-gradient(900px 500px at 85% 20%, rgba(96,165,250,.35), transparent 60%),
+      radial-gradient(700px 500px at 0% 100%, rgba(37,99,235,.55), transparent 60%),
+      linear-gradient(135deg, #071431 0%, #0B2A6F 55%, #1447C9 100%);
+    position: relative;
+  }
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 40px 40px; mask-image: linear-gradient(90deg, #000 0%, rgba(0,0,0,.3) 60%, transparent 100%); }
+  .left { position: absolute; left: 72px; top: 92px; width: 560px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); font-size: 15px; font-weight: 600; letter-spacing: .02em; color: #DBEAFE; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: #60A5FA; box-shadow: 0 0 12px #60A5FA; }
+  h1 { margin-top: 26px; font-size: 76px; line-height: 1; font-weight: 800; letter-spacing: -0.035em; }
+  h1 span { color: #93C5FD; }
+  .sub { margin-top: 22px; font-size: 25px; line-height: 1.35; color: #DBEAFE; font-weight: 500; }
+  .sub b { color: #fff; }
+  .tag { margin-top: 30px; font-size: 18px; color: #BFDBFE; font-family: Menlo, ui-monospace, monospace; }
+  .chips { position: absolute; left: 72px; bottom: 64px; display: flex; gap: 10px; }
+  .chip { padding: 9px 16px; border-radius: 10px; background: rgba(7,20,49,.45); border: 1px solid rgba(147,197,253,.3);
+    font-size: 16px; font-weight: 600; color: #E0ECFF; }
+  .chip.to { background: #fff; color: #0B2A6F; border-color: #fff; }
+  .arrow { align-self: center; color: #93C5FD; font-size: 22px; font-weight: 700; }
+
+  .win { position: absolute; width: 470px; height: 300px; border-radius: 14px; overflow: hidden;
+    background: #fff; box-shadow: 0 30px 60px rgba(2,8,23,.45), 0 0 0 1px rgba(255,255,255,.15); }
+  .w1 { right: 150px; top: 70px; transform: rotate(-3deg); opacity: .96; }
+  .w2 { right: 64px; top: 230px; transform: rotate(2deg); }
+  .bar { height: 34px; background: #EEF2F8; display: flex; align-items: center; gap: 7px; padding: 0 14px; }
+  .bar i { width: 10px; height: 10px; border-radius: 50%; background: #CBD5E1; }
+  .bar .url { margin-left: 12px; flex: 1; height: 18px; border-radius: 6px; background: #fff; font-size: 11px; color: #64748B;
+    font-family: Menlo, monospace; display: flex; align-items: center; padding: 0 8px; }
+  .bar .lbl { font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 6px; }
+  .w1 .lbl { background: #E2E8F0; color: #334155; }
+  .w2 .lbl { background: #DBEAFE; color: #1D4ED8; }
+  .page { padding: 16px; }
+  .hero { height: 96px; border-radius: 8px; background: linear-gradient(120deg, #0F172A, #1E3A8A); position: relative; }
+  .hero::after { content: ""; position: absolute; left: 16px; top: 22px; width: 190px; height: 14px; border-radius: 4px; background: rgba(255,255,255,.9);
+    box-shadow: 0 24px 0 -2px rgba(255,255,255,.5), 0 46px 0 -4px rgba(255,255,255,.35); }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .card { height: 70px; border-radius: 6px; background: #E2E8F0; }
+  .card:nth-child(2) { background: #CBD5E1; }
+  .lines { margin-top: 12px; }
+  .lines i { display: block; height: 8px; border-radius: 4px; background: #E2E8F0; margin-bottom: 7px; }
+  .lines i:nth-child(2) { width: 80%; } .lines i:nth-child(3) { width: 60%; }
+
+  .badge { position: absolute; right: 98px; top: 470px; display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+    border-radius: 14px; background: #0B1B3F; border: 1px solid rgba(147,197,253,.4); box-shadow: 0 20px 40px rgba(2,8,23,.5); }
+  .badge .ok { width: 30px; height: 30px; border-radius: 50%; background: #22C55E; display: grid; place-items: center; color: #fff; font-weight: 900; font-size: 18px; }
+  .badge .t1 { font-family: Menlo, monospace; font-size: 22px; font-weight: 700; }
+  .badge .t2 { font-size: 13px; color: #BFDBFE; margin-top: 2px; }
+</style></head>
+<body>
+  <div class="grid"></div>
+  <div class="left">
+    <div class="pill"><i></i>Skill do Claude Code · código aberto</div>
+    <h1>migrate<span>-</span>nocode</h1>
+    <p class="sub">Leve um site do <b>Ycode, Webflow, Framer ou WordPress</b> para <b>Next.js</b>, idêntico ao pixel.</p>
+    <p class="tag">snapshot → conversão → medição → revisão</p>
+  </div>
+  <div class="chips">
+    <span class="chip">Ycode</span><span class="chip">Webflow</span><span class="chip">Framer</span><span class="chip">WordPress</span>
+    <span class="arrow">→</span><span class="chip to">Next.js</span>
+  </div>
+  <div class="win w1"><div class="bar"><i></i><i></i><i></i><span class="url">https://site-no-ar.com.br</span><span class="lbl">NO AR</span></div>
+    <div class="page"><div class="hero"></div><div class="row"><div class="card"></div><div class="card"></div><div class="card"></div></div><div class="lines"><i></i><i></i><i></i></div></div></div>
+  <div class="win w2"><div class="bar"><i></i><i></i><i></i><span class="url">localhost:3100</span><span class="lbl">CÓDIGO</span></div>
+    <div class="page"><div class="hero"></div><div class="row"><div class="card"></div><div class="card"></div><div class="card"></div></div><div class="lines"><i></i><i></i><i></i></div></div></div>
+  <div class="badge"><div class="ok">✓</div><div><div class="t1">0,00% de diferença</div><div class="t2">0 divergências · 1920 / 1440 / 768 / 390</div></div></div>
+</body></html>

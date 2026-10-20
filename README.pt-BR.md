@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/cover.png" alt="migrate-nocode: leve um site do Ycode, Webflow, Framer ou WordPress para Next.js, idêntico ao pixel" width="100%">
+  <img src="docs/assets/cover.pt-BR.png" alt="migrate-nocode: leve um site do Ycode, Webflow, Framer ou WordPress para Next.js, idêntico ao pixel" width="100%">
 </p>
 
 <p align="center">
@@ -93,7 +93,7 @@ Um plugin, sete skills que só carregam quando precisam:
 
 | Skill | Quando carrega | O que traz |
 |---|---|---|
-| **`migrate`** | Você pede para migrar um site | Perguntas iniciais, o método em 11 fases, as ferramentas, critério de pronto, relatório final |
+| **`migrate`** | Você pede para migrar um site | Perguntas iniciais, o método fase a fase, as ferramentas, critério de pronto, relatório final |
 | **`migrate-ycode`** | O site é Ycode | Conversão nativa em Tailwind, semântica do runtime do Ycode (interações GSAP, sliders Swiper), exportação do backup `.ycode` |
 | **`migrate-webflow`** | O site é Webflow | `webflow.css` como base e depois Tailwind, extração das interações IX2, componentes `w-*`, CMS pela Data API v2 ou CSV |
 | **`migrate-framer`** | O site é Framer | CSS do SSR como base e depois Tailwind, variantes de breakpoint, animações de entrada e de scroll com Motion, CMS por CSV |
@@ -264,8 +264,11 @@ imagem de compartilhamento e nos componentes que o cliente redesenhou e nunca pu
 **Funciona em outros agentes (Cursor, Codex…)?** As skills são arquivos `SKILL.md` simples mais scripts Node; agentes que
 suportam o formato de skills podem usar. Foi feito e testado no Claude Code.
 
-**O código sai "limpo"?** Sai *fiel*: as classes e o CSS da plataforma, componentizados por seção. Refatorar para um
-design system é um passo separado e deliberado; fazer isso durante a migração é justamente o que faz o site escorregar.
+**O código sai "limpo"?** Sai *fiel* primeiro: componentizado por seção, com as classes da plataforma (o Ycode já é Tailwind) ou o CSS
+dela como base medida. No Webflow, Framer e WordPress, depois ele é convertido para Tailwind seção por seção, medido de
+novo a cada passo, com um `legacy.css` pequeno e documentado para o que o Tailwind não expressa. Refatorar para um
+design system é um passo separado e deliberado: fazer isso antes de existir uma base medida é justamente o que faz o
+site escorregar.
 
 **E formulários, loja, área de membros?** Formulários são migrados no visual (todos os estados) e ligados a um backend
 na etapa de conteúdo. Loja e área de membros ficam fora do escopo e entram nas pendências.

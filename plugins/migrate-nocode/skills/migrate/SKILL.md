@@ -10,8 +10,9 @@ project whose pages are indistinguishable from it at 1920, 1440, 768 and 390 px,
 
 The method in one sentence: **convert, don't interpret.** Snapshot the rendered HTML of every route, convert it to
 JSX keeping the original classes and CSS, measure live vs local in a headless browser, fix until the measured
-difference is zero. Every fix comes from a measured value, never from "looks the same". Rewriting styles "by hand"
-is what makes migrations end up *similar* instead of *identical*.
+difference is zero. Every fix comes from a measured value, never from "looks the same". Rewriting styles *before* there is a
+measured baseline is what makes migrations end up *similar* instead of *identical*; once a page measures clean,
+rewriting (e.g. platform CSS → Tailwind, phase 5b) is safe, because every step is measured against that baseline.
 
 Talk to the user in their language. Work autonomously once intake is done.
 
@@ -35,7 +36,6 @@ defaults and why each matters: [references/intake.md](references/intake.md). The
 6. CSS target (non-Tailwind platforms): convert to Tailwind after the visual baseline is clean (default), or keep the
    platform CSS ([references/tailwind-conversion.md](references/tailwind-conversion.md)). And the polish layer: keep 100%
    faithful, or apply the optional finishing layer after fidelity ([references/polish.md](references/polish.md)).
-   ([references/polish.md](references/polish.md)).
 7. Git: branch or straight to main; push/deploy only on explicit request (default).
 
 Then load the platform skill — `migrate-ycode`, `migrate-webflow`, `migrate-framer` or `migrate-wordpress` — it
@@ -123,8 +123,7 @@ typos (obvious typos: fix and record), and the visual bugs of the live site. No 
 Foundations first, measured on the Home, before any page work — the traps that cost hours are in
 [references/pitfalls.md](references/pitfalls.md) (fonts, base body styles, breakpoints, CSS order, images,
 library versions, StrictMode, inline scripts). Then shared components, then pages in parallel following
-[references/agents.md](references/agents.md), then motion. On Webflow, Framer and WordPress, phase 5b converts the baseline CSS to Tailwind section by section
-([references/tailwind-conversion.md](references/tailwind-conversion.md)).
+[references/agents.md](references/agents.md), then motion.
 
 ```bash
 node tools/migrate/tojsx.mjs --page about --list
@@ -139,6 +138,13 @@ node tools/migrate/run-all.mjs --sections
 Content that comes from the CMS (lists, posts, case studies) is fixed data in this stage: extract it from the
 snapshot into `lib/data/<collection>.json`, render with ONE template per collection, and check every route with
 `verify-dom.mjs`. Record in `docs/pendencias.md` (or `docs/pending.md`) what waits for the CMS stage.
+
+### Phase 5b: CSS → Tailwind (Webflow, Framer, WordPress)
+
+Only after the pages above measure clean with the platform CSS imported as the baseline (commit it: it is the revert
+point). Convert section by section, measure after each one, keep a small documented `legacy.css` for what Tailwind
+can't express. Skip it on Ycode (already Tailwind) or when the user chose to keep the platform CSS. Rules, drift
+to check first and what stays CSS: [references/tailwind-conversion.md](references/tailwind-conversion.md).
 
 ### Definition of done (per page and width, against the production build)
 
