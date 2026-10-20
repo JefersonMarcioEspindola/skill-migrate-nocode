@@ -1,5 +1,6 @@
 <p align="center">
-  <a href="README.md">🇺🇸 English</a> &nbsp;·&nbsp; <b>🇧🇷 Português</b>
+  <a href="README.md"><img alt="Read in English" src="https://img.shields.io/badge/English-click%20here%20to%20read-0B2A6F?style=for-the-badge"></a>
+  <a href="README.pt-BR.md"><img alt="Português (atual)" src="https://img.shields.io/badge/Portugu%C3%AAs%20(BR)-voc%C3%AA%20est%C3%A1%20aqui-1D4ED8?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -9,7 +10,6 @@
 <p align="center">
   <a href="#instalação"><img alt="Instalar no Claude Code" src="https://img.shields.io/badge/Instalar%20no-Claude%20Code-1D4ED8?style=for-the-badge&logo=claude&logoColor=white"></a>
   <a href="#prompt-inicial"><img alt="Prompt inicial" src="https://img.shields.io/badge/Copiar-prompt%20inicial-0B2A6F?style=for-the-badge"></a>
-  <a href="README.md"><img alt="Read in English" src="https://img.shields.io/badge/Read%20in-English-60A5FA?style=for-the-badge"></a>
 </p>
 
 <p align="center">
